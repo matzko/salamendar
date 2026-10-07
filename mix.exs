@@ -7,7 +7,12 @@ defmodule Salamendar.MixProject do
       version: "0.1.0",
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      dialyzer: [
+        plt_add_apps: [:mix, :ex_unit],
+        plt_local_path: "priv/plts",
+        plt_core_path: "priv/plts"
+      ]
     ]
   end
 
@@ -27,7 +32,9 @@ defmodule Salamendar.MixProject do
       {:slack_elixir,
        git: "https://github.com/matzko/slack_elixir.git",
        ref: "f7d2a1bc9671981995ab98913d6ac2452bf1b29f"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 end

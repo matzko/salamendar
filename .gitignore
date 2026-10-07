@@ -29,3 +29,6 @@ config/.env.exs
 
 # ElixirLS
 /.elixir_ls/
+
+# Dialyzer PLT files
+/priv/plts/
