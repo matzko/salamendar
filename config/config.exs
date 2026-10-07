@@ -2,6 +2,13 @@ import Config
 
 config :salamendar, ecto_repos: [Salamendar.Repo]
 
+# UUID primary/foreign keys and timezone-aware timestamps for every table.
+# Schemas pick up the matching settings via `use Salamendar.Schema`.
+config :salamendar, Salamendar.Repo,
+  migration_primary_key: [type: :binary_id],
+  migration_foreign_key: [type: :binary_id],
+  migration_timestamps: [type: :utc_datetime_usec]
+
 config :slack_elixir,
   socket_mode: true
 
