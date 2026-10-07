@@ -12,7 +12,23 @@ clicks) unacknowledged, so the clicker sees a warning triangle and
 
 ## Development setup
 
-Toolchain versions are in `.tool-versions` (works with mise or asdf).
+Toolchain versions (Elixir, Erlang, [`just`](https://just.systems)) are in
+`.tool-versions`. Run `mise install` to get them. You also need Docker with
+Compose v2 for Postgres.
+
+Run `just` to list the dev commands. The main ones:
+
+| Command | What it does |
+| --- | --- |
+| `just setup` | Starts Postgres, fetches deps, creates and migrates the database |
+| `just run` | Starts Postgres, then `iex -S mix` |
+| `just test` | Starts Postgres, then `mix test` (extra args are passed through) |
+| `just psql` | Opens psql on the dev database |
+| `just down` / `just nuke` | Stops Postgres / stops it and deletes its data |
+| `just lint` | Format check, Credo, Dialyzer |
+
+`just` loads `.env` automatically. If something else already uses port 5432,
+set `POSTGRES_PORT` in `.env`.
 
 ### 1. Create the Slack app
 
@@ -32,14 +48,15 @@ Use either one:
 - **Config file:** `cp config/.env.exs.example config/.env.exs` and fill it in.
   It's loaded in `:dev` only and is git-ignored.
 - **Environment:** set `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`, for example
-  `cp .env.example .env`, fill it in, then `set -a; source .env; set +a`.
+  `cp .env.example .env` and fill it in. `just` loads `.env` for you;
+  without just, run `set -a; source .env; set +a` first.
   Environment variables take precedence over `config/.env.exs`.
 
 ### 3. Run it
 
 ```sh
-mix deps.get
-iex -S mix
+just setup   # first time only
+just run
 ```
 
 Once the log shows `[Slack.Socket] hello`, you're connected. To try it:
@@ -58,8 +75,11 @@ answers `ok`.
 ## Tests
 
 ```sh
-mix test
+just test
 ```
+
+Tests run against `salamendar_test` in the compose Postgres, inside the
+Ecto SQL sandbox.
 
 `config/test.exs` sets `start_supervisor?: false`, so the Slack supervision
 tree never starts (and never hits the network) under test.

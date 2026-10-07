@@ -1,5 +1,7 @@
 import Config
 
+config :salamendar, ecto_repos: [Salamendar.Repo]
+
 config :slack_elixir,
   socket_mode: true
 

@@ -9,3 +9,13 @@ slack_env =
 if slack_env != [] do
   config :salamendar, slack_env
 end
+
+if config_env() == :prod do
+  database_url =
+    System.get_env("DATABASE_URL") ||
+      raise "DATABASE_URL must be set, e.g. ecto://USER:PASS@HOST/DATABASE"
+
+  config :salamendar, Salamendar.Repo,
+    url: database_url,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE", "10"))
+end

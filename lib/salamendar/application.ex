@@ -4,7 +4,7 @@ defmodule Salamendar.Application do
 
   @impl true
   def start(_type, _args) do
-    children = slack_children()
+    children = [Salamendar.Repo | slack_children()]
 
     opts = [strategy: :one_for_one, name: Salamendar.Supervisor]
     Supervisor.start_link(children, opts)
