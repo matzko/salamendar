@@ -12,7 +12,7 @@ features:
   slash_commands:
     - command: /salamendar
       description: Talk to Salamendar
-      usage_hint: "[anything]"
+      usage_hint: "Ask Salamendar to create a calendar event."
       should_escape: false
 oauth_config:
   scopes:
