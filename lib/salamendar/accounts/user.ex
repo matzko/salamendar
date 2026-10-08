@@ -7,6 +7,8 @@ defmodule Salamendar.Accounts.User do
   use Salamendar.Schema
   import Ecto.Changeset
 
+  alias Salamendar.TimeZones
+
   @type t :: %__MODULE__{}
 
   schema "users" do
@@ -24,6 +26,7 @@ defmodule Salamendar.Accounts.User do
     user
     |> cast(attrs, [:slack_team_id, :slack_user_id, :name, :time_zone])
     |> validate_required([:slack_team_id, :slack_user_id])
+    |> TimeZones.validate(:time_zone)
     |> unique_constraint([:slack_team_id, :slack_user_id])
   end
 end

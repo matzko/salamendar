@@ -9,6 +9,12 @@ config :salamendar, Salamendar.Repo,
   migration_foreign_key: [type: :binary_id],
   migration_timestamps: [type: :utc_datetime_usec]
 
+# Full IANA time zone support (the default database only knows Etc/UTC).
+config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+
+# Used for channels that haven't set their own time zone.
+config :salamendar, default_time_zone: "America/Chicago"
+
 config :slack_elixir,
   socket_mode: true
 

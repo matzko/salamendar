@@ -15,4 +15,7 @@ config :salamendar, Salamendar.Repo,
 # unless Slack answers `ok`, so the application would fail to boot.
 config :salamendar, :slack, start_supervisor?: false
 
+# Use the bundled tz data; don't fetch updates over the network in tests.
+config :tzdata, :autoupdate, :disabled
+
 config :logger, level: :warning
