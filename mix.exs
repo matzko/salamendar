@@ -34,7 +34,9 @@ defmodule Salamendar.MixProject do
   defp deps do
     [
       # Fork of ryanwinchester/slack_elixir that also dispatches Socket Mode
-      # `interactive` envelopes (Block Kit button clicks, etc.) to the bot.
+      # `interactive` envelopes (Block Kit button clicks, etc.) to the bot and
+      # lets `view_submission` handlers return `{:ack, payload}` to show
+      # modal validation errors.
       {:slack_elixir,
        git: "https://github.com/matzko/slack_elixir.git",
        ref: "afec212f50b2fea252cef32472c3dc4a8394d5df"},
