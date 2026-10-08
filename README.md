@@ -87,7 +87,9 @@ tree never starts (and never hits the network) under test.
 ## Slack app gotchas
 
 - After you **add a scope**, you have to reinstall the app, and reinstalling
-  may issue a new `xoxb` token.
+  may issue a new `xoxb` token. Copy it into `config/.env.exs`. When
+  `slack-app-manifest.yml` changes, paste it into *App Manifest* in the app's
+  settings, then reinstall.
 - **Event subscriptions are separate from scopes.** If you hold `im:history`
   but don't subscribe to `message.im`, DMs are never delivered.
 - **Interactivity** has to be on (*Interactivity & Shortcuts*). With it off,

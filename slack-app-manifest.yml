@@ -4,6 +4,7 @@ display_information:
   name: Salamendar
 features:
   app_home:
+    home_tab_enabled: true
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   bot_user:
@@ -11,8 +12,8 @@ features:
     always_online: true
   slash_commands:
     - command: /salamendar
-      description: Talk to Salamendar
-      usage_hint: "Ask Salamendar to create a calendar event."
+      description: Shared channel calendar
+      usage_hint: "enable | disable | new | tz <zone> | week-start <day>"
       should_escape: false
 oauth_config:
   scopes:
@@ -31,6 +32,10 @@ oauth_config:
       - groups:history
       - im:history
       - mpim:history
+      # Month and week channel canvases.
+      - canvases:write
+      # conversations.join in `/salamendar enable` (public channels).
+      - channels:join
 settings:
   event_subscriptions:
     bot_events:
@@ -39,6 +44,22 @@ settings:
       - message.channels
       - message.groups
       - message.mpim
+      - app_home_opened
+      - member_joined_channel
+      - member_left_channel
+      # Sent when the bot itself is removed; member_left_channel isn't, since
+      # the bot is no longer in the channel. Slack.ChannelServer relies on
+      # channel_left.
+      - channel_left
+      - group_left
+      - channel_rename
+      - channel_archive
+      - channel_unarchive
+      - channel_deleted
+      - group_rename
+      - group_archive
+      - group_unarchive
+      - group_deleted
   interactivity:
     is_enabled: true
   org_deploy_enabled: false
