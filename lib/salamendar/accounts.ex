@@ -31,4 +31,14 @@ defmodule Salamendar.Accounts do
       returning: true
     )
   end
+
+  @doc """
+  The time zone to show `user` times in: theirs from Slack, or the
+  configured default (e.g. for stub users not yet fetched).
+  """
+  @spec time_zone(User.t()) :: String.t()
+  def time_zone(%User{time_zone: nil}),
+    do: Application.fetch_env!(:salamendar, :default_time_zone)
+
+  def time_zone(%User{time_zone: time_zone}), do: time_zone
 end

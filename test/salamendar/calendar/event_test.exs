@@ -20,7 +20,7 @@ defmodule Salamendar.Calendar.EventTest do
     end_date: ~D[2026-10-11]
   }
 
-  defp changeset(attrs), do: Event.changeset(%Event{slack_team_id: "T1"}, attrs)
+  defp changeset(attrs), do: Event.changeset(%Event{slack_team_id: "TE1"}, attrs)
 
   describe "changeset/2" do
     test "accepts a timed event" do
@@ -72,7 +72,7 @@ defmodule Salamendar.Calendar.EventTest do
     test "rejects a mixed row that skips the changeset" do
       row = %{
         id: Ecto.UUID.generate(),
-        slack_team_id: "T1",
+        slack_team_id: "TE1",
         title: "Mixed",
         time_zone: "UTC",
         all_day: false,
@@ -91,11 +91,11 @@ defmodule Salamendar.Calendar.EventTest do
 
   describe "cascades" do
     setup do
-      {:ok, owner} = Accounts.get_or_create_user("T1", "U1")
-      channel = Repo.insert!(%Channel{slack_team_id: "T1", slack_channel_id: "C1"})
+      {:ok, owner} = Accounts.get_or_create_user("TE1", "U1")
+      channel = Repo.insert!(%Channel{slack_team_id: "TE1", slack_channel_id: "C1"})
 
       event =
-        %Event{slack_team_id: "T1", owner_id: owner.id}
+        %Event{slack_team_id: "TE1", owner_id: owner.id}
         |> Event.changeset(@timed)
         |> put_assoc(:channels, [channel])
         |> Repo.insert!()
@@ -115,7 +115,7 @@ defmodule Salamendar.Calendar.EventTest do
     end
 
     test "changing channels replaces the join rows", %{event: event} do
-      other = Repo.insert!(%Channel{slack_team_id: "T1", slack_channel_id: "C2"})
+      other = Repo.insert!(%Channel{slack_team_id: "TE1", slack_channel_id: "C2"})
 
       event
       |> Repo.preload(:channels)

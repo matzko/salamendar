@@ -6,7 +6,7 @@ defmodule Salamendar.Channels.SchemaTest do
 
   defp insert_channel(attrs \\ %{}) do
     %Channel{}
-    |> Channel.changeset(Map.merge(%{slack_team_id: "T1", slack_channel_id: "C1"}, attrs))
+    |> Channel.changeset(Map.merge(%{slack_team_id: "TS1", slack_channel_id: "C1"}, attrs))
     |> Repo.insert()
   end
 
@@ -74,7 +74,7 @@ defmodule Salamendar.Channels.SchemaTest do
 
   describe "Membership" do
     test "is deleted with its user or channel" do
-      {:ok, user} = Accounts.get_or_create_user("T1", "U1")
+      {:ok, user} = Accounts.get_or_create_user("TS1", "U1")
       {:ok, channel} = insert_channel()
       {:ok, other} = insert_channel(%{slack_channel_id: "C2"})
 

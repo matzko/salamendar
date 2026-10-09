@@ -10,7 +10,7 @@ defmodule Salamendar.ChannelsTest do
   alias Salamendar.Channels.{Canvas, Channel, Membership}
 
   defp channel!(slack_channel_id \\ "C1", attrs \\ %{}) do
-    {:ok, channel} = Channels.upsert_channel("T1", slack_channel_id, attrs)
+    {:ok, channel} = Channels.upsert_channel("TCH1", slack_channel_id, attrs)
     channel
   end
 
@@ -20,7 +20,7 @@ defmodule Salamendar.ChannelsTest do
   end
 
   defp user!(slack_user_id, attrs \\ %{}) do
-    {:ok, user} = Accounts.get_or_create_user("T1", slack_user_id, attrs)
+    {:ok, user} = Accounts.get_or_create_user("TCH1", slack_user_id, attrs)
     user
   end
 
@@ -38,9 +38,9 @@ defmodule Salamendar.ChannelsTest do
   describe "upsert_channel/3" do
     test "creates a channel with default settings" do
       assert {:ok, %Channel{} = channel} =
-               Channels.upsert_channel("T1", "C1", %{name: "general", is_private: true})
+               Channels.upsert_channel("TCH1", "C1", %{name: "general", is_private: true})
 
-      assert channel.slack_team_id == "T1"
+      assert channel.slack_team_id == "TCH1"
       assert channel.slack_channel_id == "C1"
       assert channel.name == "general"
       assert channel.is_private
@@ -49,7 +49,7 @@ defmodule Salamendar.ChannelsTest do
 
     test "returns the existing channel and updates the given attributes" do
       original = channel!("C1", %{name: "general", is_private: true})
-      {:ok, updated} = Channels.upsert_channel("T1", "C1", %{is_private: false})
+      {:ok, updated} = Channels.upsert_channel("TCH1", "C1", %{is_private: false})
 
       assert updated.id == original.id
       # Omitted attributes are kept; `false` overwrites `true` even though
@@ -63,7 +63,7 @@ defmodule Salamendar.ChannelsTest do
       {:ok, _} = Channels.enable_calendar(channel!())
 
       {:ok, channel} =
-        Channels.upsert_channel("T1", "C1", %{calendar_enabled: false, week_start: 3})
+        Channels.upsert_channel("TCH1", "C1", %{calendar_enabled: false, week_start: 3})
 
       assert channel.calendar_enabled
       assert channel.week_start == 0
@@ -80,7 +80,7 @@ defmodule Salamendar.ChannelsTest do
       {:ok, canvas} = Channels.get_or_create_canvas(channel, :month)
 
       event =
-        %Event{slack_team_id: "T1", owner_id: user.id}
+        %Event{slack_team_id: "TCH1", owner_id: user.id}
         |> Event.changeset(%{
           title: "Standup",
           time_zone: "America/Chicago",
@@ -163,7 +163,7 @@ defmodule Salamendar.ChannelsTest do
       # The existing user is reused, not overwritten.
       assert %User{name: "Ada", time_zone: "Europe/London"} = Repo.reload!(known)
 
-      stub = Repo.get_by!(User, slack_team_id: "T1", slack_user_id: "U2")
+      stub = Repo.get_by!(User, slack_team_id: "TCH1", slack_user_id: "U2")
       assert is_nil(stub.name)
       assert is_nil(stub.time_zone)
       assert {:ok, <<_::48, 7::4, _::76>>} = Ecto.UUID.dump(stub.id)
@@ -190,19 +190,19 @@ defmodule Salamendar.ChannelsTest do
       assert member_slack_ids(other) == ["U1", "U2"]
 
       # The user who left still exists.
-      assert Repo.get_by(User, slack_team_id: "T1", slack_user_id: "U2")
+      assert Repo.get_by(User, slack_team_id: "TCH1", slack_user_id: "U2")
 
       assert {:ok, %{added: 0, removed: 2}} = Channels.replace_members(channel, [])
       assert member_slack_ids(channel) == []
     end
 
     test "keeps users of other workspaces apart" do
-      {:ok, channel} = Channels.upsert_channel("T2", "C1")
-      {:ok, _} = Accounts.get_or_create_user("T1", "U1")
+      {:ok, channel} = Channels.upsert_channel("TCH2", "C1")
+      {:ok, _} = Accounts.get_or_create_user("TCH1", "U1")
 
       {:ok, %{added: 1}} = Channels.replace_members(channel, ["U1"])
 
-      assert Repo.get_by(User, slack_team_id: "T2", slack_user_id: "U1")
+      assert Repo.get_by(User, slack_team_id: "TCH2", slack_user_id: "U1")
       assert Repo.aggregate(User, :count) == 2
     end
   end
