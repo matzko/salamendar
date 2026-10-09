@@ -15,6 +15,7 @@ defmodule Salamendar.Calendar do
   alias Salamendar.Calendar.Event
   alias Salamendar.Channels
   alias Salamendar.Channels.{Channel, Membership}
+  alias Salamendar.Render.Period
   alias Salamendar.Repo
 
   @type affected_channel_ids :: [Ecto.UUID.t()]
@@ -177,8 +178,8 @@ defmodule Salamendar.Calendar do
   # Events overlapping the local days [first, stop) in `time_zone`. Timed
   # events are compared in UTC; all-day dates are the same everywhere.
   defp overlaps(first, stop, time_zone) do
-    window_start = start_of_day(first, time_zone)
-    window_end = start_of_day(stop, time_zone)
+    window_start = Period.start_of_day(first, time_zone)
+    window_end = Period.start_of_day(stop, time_zone)
 
     dynamic(
       [e],
@@ -188,14 +189,4 @@ defmodule Salamendar.Calendar do
   end
 
   defp chronological, do: [desc: :all_day, asc: :start_date, asc: :starts_at, asc: :title]
-
-  # Where a daylight saving change skips midnight, the day starts at the
-  # first time that exists; where midnight happens twice, at the first one.
-  defp start_of_day(date, time_zone) do
-    case DateTime.new(date, ~T[00:00:00], time_zone) do
-      {:ok, datetime} -> DateTime.shift_zone!(datetime, "Etc/UTC")
-      {:gap, _before, just_after} -> DateTime.shift_zone!(just_after, "Etc/UTC")
-      {:ambiguous, first, _second} -> DateTime.shift_zone!(first, "Etc/UTC")
-    end
-  end
 end
