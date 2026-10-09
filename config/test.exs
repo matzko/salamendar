@@ -15,6 +15,16 @@ config :salamendar, Salamendar.Repo,
 # unless Slack answers `ok`, so the application would fail to boot.
 config :salamendar, :slack, start_supervisor?: false
 
+# Slack Web API calls go to a Mox mock (defined in `test/test_helper.exs`).
+config :salamendar, :slack_api, Salamendar.SlackAPI.Mock
+
+# For `Salamendar.SlackAPI.Client`'s own tests, which never reach Slack:
+# requests go to `Req.Test` stubs.
+config :salamendar, slack_bot_token: "xoxb-test"
+
+config :salamendar, Salamendar.SlackAPI.Client,
+  req_options: [plug: {Req.Test, Salamendar.SlackAPI.Client}]
+
 # Use the bundled tz data; don't fetch updates over the network in tests.
 config :tzdata, :autoupdate, :disabled
 

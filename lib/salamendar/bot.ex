@@ -24,11 +24,13 @@ defmodule Salamendar.Bot do
   use Slack.Bot
   require Logger
 
+  alias Salamendar.SlackAPI
+
   @impl Slack.Bot
-  def handle_event("app_mention", %{"channel" => channel} = payload, bot) do
+  def handle_event("app_mention", %{"channel" => channel} = payload, _bot) do
     Logger.info("app_mention from #{payload["user"]}: #{inspect(payload["text"])}")
 
-    post(bot, "chat.postMessage", %{
+    post("chat.postMessage", %{
       channel: channel,
       text: "Hi <@#{payload["user"]}>! :wave:",
       thread_ts: payload["thread_ts"] || payload["ts"],
@@ -36,18 +38,18 @@ defmodule Salamendar.Bot do
     })
   end
 
-  def handle_event("message", %{"channel_type" => "im", "channel" => channel} = payload, bot) do
+  def handle_event("message", %{"channel_type" => "im", "channel" => channel} = payload, _bot) do
     if is_nil(payload["subtype"]) do
       Logger.info("DM from #{payload["user"]}: #{inspect(payload["text"])}")
-      post(bot, "chat.postMessage", %{channel: channel, text: "You said: #{payload["text"]}"})
+      post("chat.postMessage", %{channel: channel, text: "You said: #{payload["text"]}"})
     end
   end
 
-  def handle_event("slash_commands", %{"command" => command} = payload, bot) do
+  def handle_event("slash_commands", %{"command" => command} = payload, _bot) do
     Logger.info("#{command} from #{payload["user_id"]}: #{inspect(payload["text"])}")
 
     # Ephemeral, so it works even in channels the bot isn't a member of.
-    post(bot, "chat.postEphemeral", %{
+    post("chat.postEphemeral", %{
       channel: payload["channel_id"],
       user: payload["user_id"],
       text: "Got `#{command} #{payload["text"]}`",
@@ -55,7 +57,7 @@ defmodule Salamendar.Bot do
     })
   end
 
-  def handle_event("interactive", %{"type" => "block_actions"} = payload, bot) do
+  def handle_event("interactive", %{"type" => "block_actions"} = payload, _bot) do
     user = get_in(payload, ["user", "id"])
     channel = get_in(payload, ["channel", "id"]) || get_in(payload, ["container", "channel_id"])
 
@@ -63,7 +65,7 @@ defmodule Salamendar.Bot do
       Logger.info("block_action #{action_id} from #{user}: #{inspect(action["value"])}")
 
       # Ephemeral reply: only the clicker sees it.
-      post(bot, "chat.postEphemeral", %{
+      post("chat.postEphemeral", %{
         channel: channel,
         user: user,
         text: "You clicked `#{action_id}` (value: #{inspect(action["value"])})"
@@ -75,14 +77,10 @@ defmodule Salamendar.Bot do
     Logger.debug("Unhandled event #{inspect(type)}: #{inspect(payload)}")
   end
 
-  # `Slack.API.post/3` sends a form-encoded body, so structured fields like
-  # `blocks` must be pre-encoded as JSON strings.
-  defp post(bot, endpoint, body) do
-    body = Map.new(body, fn {k, v} -> {k, if(is_list(v), do: Jason.encode!(v), else: v)} end)
-
-    case Slack.API.post(endpoint, bot.token, body) do
-      {:ok, %{"ok" => true}} = ok -> ok
-      error -> Logger.error("#{endpoint} failed: #{inspect(error)}")
+  defp post(method, body) do
+    case SlackAPI.post(method, body) do
+      {:ok, _} = ok -> ok
+      error -> Logger.error("#{method} failed: #{inspect(error)}")
     end
   end
 
