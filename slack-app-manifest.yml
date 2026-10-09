@@ -32,7 +32,7 @@ oauth_config:
       - groups:history
       - im:history
       - mpim:history
-      # Month and week channel canvases.
+      # Month canvas tab in each calendar channel.
       - canvases:write
       # conversations.join in `/salamendar enable` (public channels).
       - channels:join
