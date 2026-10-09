@@ -44,6 +44,33 @@ defmodule Salamendar.Channels do
   end
 
   @doc """
+  The channel for `team_id`/`channel_id`, or `nil` if it isn't stored.
+  """
+  @spec get_channel(String.t(), String.t()) :: Channel.t() | nil
+  def get_channel(team_id, channel_id) do
+    Repo.get_by(Channel, slack_team_id: team_id, slack_channel_id: channel_id)
+  end
+
+  @doc """
+  Deletes `channel` (e.g. after it's deleted in Slack). Its memberships,
+  canvas rows and `event_channels` rows go with it; its events stay.
+  """
+  @spec delete_channel(Channel.t()) :: :ok
+  def delete_channel(%Channel{} = channel) do
+    Repo.delete_all(from(c in Channel, where: c.id == ^channel.id))
+    :ok
+  end
+
+  @doc """
+  Updates `channel`'s calendar settings: any of `:time_zone` and
+  `:week_start` in `attrs`.
+  """
+  @spec update_settings(Channel.t(), map()) :: {:ok, Channel.t()} | {:error, Ecto.Changeset.t()}
+  def update_settings(%Channel{} = channel, attrs) do
+    update_channel(channel, Map.take(attrs, [:time_zone, :week_start]))
+  end
+
+  @doc """
   Turns the calendar on for `channel`.
   """
   @spec enable_calendar(Channel.t()) :: {:ok, Channel.t()} | {:error, Ecto.Changeset.t()}
@@ -195,6 +222,22 @@ defmodule Salamendar.Channels do
   def member?(%Channel{} = channel, %User{} = user) do
     Repo.exists?(
       from(m in Membership, where: m.channel_id == ^channel.id and m.user_id == ^user.id)
+    )
+  end
+
+  @doc """
+  The calendar-enabled, unarchived channels `user` is a member of, by name:
+  the channels they can add events to.
+  """
+  @spec list_member_channels(User.t()) :: [Channel.t()]
+  def list_member_channels(%User{} = user) do
+    Repo.all(
+      from(c in Channel,
+        join: m in Membership,
+        on: m.channel_id == c.id,
+        where: m.user_id == ^user.id and c.calendar_enabled and is_nil(c.archived_at),
+        order_by: [c.name, c.slack_channel_id]
+      )
     )
   end
 

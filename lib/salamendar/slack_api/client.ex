@@ -34,6 +34,28 @@ defmodule Salamendar.SlackAPI.Client do
     |> normalize()
   end
 
+  # Response URLs carry their own authorization and answer with plain "ok"
+  # rather than Slack's JSON envelope.
+  @impl Salamendar.SlackAPI
+  def respond(response_url, message) do
+    req_options =
+      Application.get_env(:salamendar, __MODULE__, []) |> Keyword.get(:req_options, [])
+
+    case Req.post(Req.new(retry: false) |> Req.merge(req_options),
+           url: response_url,
+           json: message
+         ) do
+      {:ok, %Req.Response{status: 200}} ->
+        :ok
+
+      {:ok, %Req.Response{status: status}} ->
+        {:error, %Salamendar.SlackAPI.UnexpectedResponse{status: status}}
+
+      {:error, exception} ->
+        {:error, exception}
+    end
+  end
+
   # Paging is `Slack.API.stream/4` from the `slack_elixir` fork, which raises
   # if a page fails.
   @impl Salamendar.SlackAPI

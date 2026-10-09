@@ -40,6 +40,13 @@ defmodule Salamendar.SlackAPI do
   """
   @callback stream(method :: String.t(), params(), resource :: String.t()) :: Enumerable.t()
 
+  @doc """
+  Replies to a slash command or interaction through its `response_url`.
+  Unlike `chat.postEphemeral`, this works in channels the bot isn't in.
+  `message` is e.g. `%{text: "…", response_type: "ephemeral"}`.
+  """
+  @callback respond(response_url :: String.t(), message :: map()) :: :ok | {:error, term()}
+
   @spec get(String.t(), params()) :: result()
   def get(method, params \\ %{}), do: impl().get(method, params)
 
@@ -48,6 +55,9 @@ defmodule Salamendar.SlackAPI do
 
   @spec stream(String.t(), params(), String.t()) :: Enumerable.t()
   def stream(method, params, resource), do: impl().stream(method, params, resource)
+
+  @spec respond(String.t(), map()) :: :ok | {:error, term()}
+  def respond(response_url, message), do: impl().respond(response_url, message)
 
   defp impl, do: Application.get_env(:salamendar, :slack_api, Salamendar.SlackAPI.Client)
 end

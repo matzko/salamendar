@@ -74,6 +74,32 @@ defmodule Salamendar.SlackAPI.ClientTest do
     assert {:error, %UnexpectedResponse{status: 502}} = Client.get("users.info", %{})
   end
 
+  test "respond/2 posts JSON to the response URL without the bot token" do
+    test = self()
+
+    Req.Test.stub(Client, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(test, {:request, conn, body})
+      Plug.Conn.send_resp(conn, 200, "ok")
+    end)
+
+    assert :ok =
+             Client.respond("https://hooks.slack.com/commands/T1/1/abc", %{
+               text: "Hi",
+               response_type: "ephemeral"
+             })
+
+    assert_received {:request, conn, body}
+    assert conn.host == "hooks.slack.com"
+    assert Plug.Conn.get_req_header(conn, "authorization") == []
+    assert Jason.decode!(body) == %{"text" => "Hi", "response_type" => "ephemeral"}
+
+    Req.Test.stub(Client, &Plug.Conn.send_resp(&1, 404, "expired_url"))
+
+    assert {:error, %UnexpectedResponse{status: 404}} =
+             Client.respond("https://hooks.slack.com/x", %{})
+  end
+
   test "returns transport errors" do
     Req.Test.stub(Client, &Req.Test.transport_error(&1, :timeout))
     assert {:error, %Req.TransportError{reason: :timeout}} = Client.get("users.info", %{})
