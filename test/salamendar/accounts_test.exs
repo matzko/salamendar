@@ -26,6 +26,14 @@ defmodule Salamendar.AccountsTest do
       assert Repo.aggregate(User, :count) == 1
     end
 
+    test "records and keeps profile_synced_at" do
+      synced_at = ~U[2026-10-09 12:00:00.000000Z]
+      {:ok, _} = Accounts.get_or_create_user("T1", "U1", %{profile_synced_at: synced_at})
+      {:ok, user} = Accounts.get_or_create_user("T1", "U1")
+
+      assert user.profile_synced_at == synced_at
+    end
+
     test "treats the same user ID in different workspaces as different users" do
       {:ok, a} = Accounts.get_or_create_user("T1", "U1")
       {:ok, b} = Accounts.get_or_create_user("T2", "U1")

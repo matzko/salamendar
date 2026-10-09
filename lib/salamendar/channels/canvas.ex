@@ -10,6 +10,7 @@ defmodule Salamendar.Channels.Canvas do
   alias Salamendar.Channels.Channel
 
   @type t :: %__MODULE__{}
+  @type kind :: :month | :week
 
   schema "channel_canvases" do
     belongs_to :channel, Channel

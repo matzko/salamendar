@@ -16,6 +16,7 @@ defmodule Salamendar.Accounts.User do
     field :slack_user_id, :string
     field :name, :string
     field :time_zone, :string
+    field :profile_synced_at, :utc_datetime_usec
 
     timestamps()
   end
@@ -24,7 +25,7 @@ defmodule Salamendar.Accounts.User do
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(user, attrs) do
     user
-    |> cast(attrs, [:slack_team_id, :slack_user_id, :name, :time_zone])
+    |> cast(attrs, [:slack_team_id, :slack_user_id, :name, :time_zone, :profile_synced_at])
     |> validate_required([:slack_team_id, :slack_user_id])
     |> TimeZones.validate(:time_zone)
     |> unique_constraint([:slack_team_id, :slack_user_id])
