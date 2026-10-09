@@ -44,6 +44,7 @@ defmodule Salamendar.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.21"},
       {:tzdata, "~> 1.1"},
+      {:oban, "~> 2.24"},
       {:mox, "~> 1.2", only: :test},
       # For `Req.Test` stubs of Slack's HTTP API.
       {:plug, "~> 1.16", only: :test},

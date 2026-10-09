@@ -222,6 +222,41 @@ defmodule Salamendar.Channels do
   end
 
   @doc """
+  `channel`'s canvas rows.
+  """
+  @spec list_canvases(Channel.t()) :: [Canvas.t()]
+  def list_canvases(%Channel{} = channel) do
+    Repo.all(from(c in Canvas, where: c.channel_id == ^channel.id))
+  end
+
+  @doc """
+  Records the Slack ID of `canvas` once it's created in Slack, or clears it
+  (`nil`) when Slack says it's gone. Clearing also forgets what was
+  rendered, so a new canvas gets a full render.
+  """
+  @spec set_canvas_slack_id(Canvas.t(), String.t() | nil) ::
+          {:ok, Canvas.t()} | {:error, Ecto.Changeset.t()}
+  def set_canvas_slack_id(%Canvas{} = canvas, slack_canvas_id) do
+    canvas
+    |> Canvas.changeset(%{
+      slack_canvas_id: slack_canvas_id,
+      rendered_period: nil,
+      content_hash: nil,
+      rendered_at: nil
+    })
+    |> Repo.update()
+  end
+
+  @doc """
+  Deletes `canvas`'s row, e.g. once the canvas is deleted in Slack.
+  """
+  @spec delete_canvas(Canvas.t()) :: :ok
+  def delete_canvas(%Canvas{} = canvas) do
+    Repo.delete_all(from(c in Canvas, where: c.id == ^canvas.id))
+    :ok
+  end
+
+  @doc """
   Records that `canvas` now shows `period` (e.g. `"2026-10-01"`), rendered
   to content with hash `hash`.
   """

@@ -6,8 +6,8 @@ defmodule Salamendar.Render.MonthCanvas do
 
   Multi-day events (all-day events over more than one day, and timed events
   of 24 hours or more) are listed above the grid rather than repeated in
-  every cell. Other events go in the cell of the day they start, at most
-  three per cell.
+  every cell. Other events go in the cell of the day they start: up to
+  seven, or six and "+N more".
 
   Canvas markdown has no working backslash escapes (checked in #test-bot,
   2026-10-09), so user text is made safe by replacing characters instead:
@@ -19,7 +19,23 @@ defmodule Salamendar.Render.MonthCanvas do
   alias Salamendar.Calendar.Event
   alias Salamendar.Render.Period
 
-  @cell_limit 3
+  # Canvas markdown can't size tables, so cells are made roughly square
+  # instead (tuned by eye in #test-bot, 2026-10-09):
+  #
+  #   * the weekday headers are padded with non-breaking spaces so they set
+  #     the column widths (about 220px each on a wide desktop window; with
+  #     more padding, seven columns no longer fit and Slack squeezes the
+  #     last ones);
+  #   * every cell has the day plus @entry_lines lines, about as tall as
+  #     the columns are wide;
+  #   * entries are cut to @entry_length characters so they don't wrap.
+  #
+  # Slack still widens a column holding a lot of text, and narrower windows
+  # make cells taller than wide. Padding the cells too made it worse.
+  @entry_lines 7
+  @entry_length 18
+  @header_padding 23
+  @nbsp "\u00A0"
   @upcoming_limit 5
   @weekday_names ~w(Sun Mon Tue Wed Thu Fri Sat)
 
@@ -96,7 +112,12 @@ defmodule Salamendar.Render.MonthCanvas do
       |> Enum.group_by(fn {_event, days} -> days.first end, fn {event, _days} -> event end)
 
     columns = Period.weekdays(week_start)
-    names = Enum.map(columns, &Enum.at(@weekday_names, &1))
+
+    names =
+      Enum.map(
+        columns,
+        &(Enum.at(@weekday_names, &1) <> String.duplicate(@nbsp, @header_padding))
+      )
 
     rows =
       for week <- Period.weeks(month, week_start) do
@@ -109,17 +130,36 @@ defmodule Salamendar.Render.MonthCanvas do
     )
   end
 
-  defp cell(nil, _events, _time_zone), do: " "
+  defp cell(nil, _events, _time_zone), do: pad_lines([@nbsp])
 
   defp cell(date, events, time_zone) do
-    {shown, hidden} = Enum.split(events, @cell_limit)
-    more = if hidden == [], do: [], else: ["+#{length(hidden)} more"]
+    entries =
+      if length(events) > @entry_lines do
+        {shown, hidden} = Enum.split(events, @entry_lines - 1)
+        Enum.map(shown, &entry(&1, time_zone)) ++ ["+#{length(hidden)} more"]
+      else
+        Enum.map(events, &entry(&1, time_zone))
+      end
 
-    Enum.join(["**#{date.day}**" | Enum.map(shown, &entry(&1, time_zone))] ++ more, "<br>")
+    pad_lines(["**#{date.day}**" | entries])
   end
 
-  defp entry(%Event{all_day: true} = event, _time_zone), do: safe(event.title)
-  defp entry(event, time_zone), do: "#{time(event.starts_at, time_zone)} #{safe(event.title)}"
+  # A day line plus exactly @entry_lines more, so every row is as tall.
+  defp pad_lines(lines) do
+    padding = List.duplicate(@nbsp, @entry_lines + 1 - length(lines))
+    Enum.join(lines ++ padding, "<br>")
+  end
+
+  defp entry(%Event{all_day: true} = event, _time_zone), do: shorten(safe(event.title))
+
+  defp entry(event, time_zone),
+    do: shorten("#{time(event.starts_at, time_zone)} #{safe(event.title)}")
+
+  defp shorten(text) do
+    if String.length(text) > @entry_length,
+      do: String.slice(text, 0, @entry_length - 1) <> "…",
+      else: text
+  end
 
   # "Fri, Oct 9 9:00", "Sat, Oct 10" (all day), "Oct 8 – Oct 12" or
   # "Oct 30 9:00 – Nov 2 17:00".

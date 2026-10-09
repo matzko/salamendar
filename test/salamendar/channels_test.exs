@@ -239,6 +239,31 @@ defmodule Salamendar.ChannelsTest do
                Channels.get_or_create_canvas(channel, :month)
     end
 
+    test "set_canvas_slack_id/2 sets or clears the ID, resetting the render state" do
+      {:ok, canvas} = Channels.get_or_create_canvas(enabled_channel!(), :month)
+      {:ok, canvas} = Channels.set_canvas_slack_id(canvas, "F1")
+      {:ok, canvas} = Channels.mark_canvas_rendered(canvas, "2026-10-01", "abc")
+
+      assert {:ok, canvas} = Channels.set_canvas_slack_id(canvas, nil)
+      assert %Canvas{slack_canvas_id: nil, rendered_period: nil, content_hash: nil} = canvas
+      assert is_nil(canvas.rendered_at)
+    end
+
+    test "list_canvases/1 and delete_canvas/1" do
+      channel = enabled_channel!()
+      other = enabled_channel!("C2")
+      {:ok, canvas} = Channels.get_or_create_canvas(channel, :month)
+      {:ok, _} = Channels.get_or_create_canvas(other, :month)
+
+      assert [%Canvas{id: id}] = Channels.list_canvases(channel)
+      assert id == canvas.id
+
+      assert :ok = Channels.delete_canvas(canvas)
+      assert :ok = Channels.delete_canvas(canvas)
+      assert Channels.list_canvases(channel) == []
+      assert [_] = Channels.list_canvases(other)
+    end
+
     test "mark_canvas_rendered/3 records the period, hash and time" do
       {:ok, canvas} = Channels.get_or_create_canvas(enabled_channel!(), :month)
 

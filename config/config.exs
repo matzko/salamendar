@@ -18,6 +18,22 @@ config :salamendar, default_time_zone: "America/Chicago"
 config :slack_elixir,
   socket_mode: true
 
+# Background jobs. Cron times are UTC.
+config :salamendar, Oban,
+  repo: Salamendar.Repo,
+  # `canvases` is kept small: `canvases.edit` is rate limited per workspace.
+  queues: [default: 5, canvases: 2],
+  plugins: [
+    # Keep finished jobs for a week, for debugging.
+    {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"*/15 * * * *", Salamendar.Workers.Rollover},
+       # 03:00 in Chicago (08:00 UTC during daylight saving time).
+       {"0 8 * * *", Salamendar.Workers.ReconcileMembers}
+     ]}
+  ]
+
 import_config "#{config_env()}.exs"
 
 # Local, git-ignored overrides (e.g. Slack tokens) for dev. Copy

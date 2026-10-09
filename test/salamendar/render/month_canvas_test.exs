@@ -6,6 +6,7 @@ defmodule Salamendar.Render.MonthCanvasTest do
 
   @october Period.month(~D[2026-10-01])
   @opts [time_zone: "America/Chicago", now: ~U[2026-10-09 12:00:00Z]]
+  @nbsp " "
 
   # Chicago is UTC-5 in October.
   defp timed(title, starts_at, ends_at),
@@ -14,8 +15,38 @@ defmodule Salamendar.Render.MonthCanvasTest do
   defp all_day(title, start_date, end_date),
     do: %Event{title: title, all_day: true, start_date: start_date, end_date: end_date}
 
+  # Ten-minute meetings on Oct 9, starting at 9:00 local.
+  defp meetings(count) do
+    for i <- 1..count do
+      starts_at = DateTime.add(~U[2026-10-09 14:00:00Z], (i - 1) * 600)
+      timed("M#{i}", starts_at, DateTime.add(starts_at, 600))
+    end
+  end
+
   defp grid_rows(markdown) do
     markdown |> String.split("\n") |> Enum.filter(&String.starts_with?(&1, "| "))
+  end
+
+  defp cells("| " <> row), do: row |> String.trim_trailing(" |") |> String.split(" | ")
+
+  # The markdown without the sizing padding: no non-breaking spaces, and no
+  # empty lines in cells. Easier to read in assertions.
+  defp visible(markdown) do
+    markdown
+    |> String.replace(@nbsp, "")
+    |> String.split("\n")
+    |> Enum.map_join("\n", fn
+      "| " <> _ = row ->
+        visible_cells =
+          for cell <- cells(row) do
+            cell |> String.split("<br>") |> Enum.reject(&(&1 == "")) |> Enum.join("<br>")
+          end
+
+        "| " <> Enum.join(visible_cells, " | ") <> " |"
+
+      line ->
+        line
+    end)
   end
 
   test "renders a month (snapshot)" do
@@ -32,7 +63,7 @@ defmodule Salamendar.Render.MonthCanvasTest do
       timed("Trip", ~U[2026-10-30 14:00:00Z], ~U[2026-11-02 22:00:00Z])
     ]
 
-    assert MonthCanvas.render(events, @october, @opts) == """
+    assert visible(MonthCanvas.render(events, @october, @opts)) == """
            # October 2026
            _Times are in America/Chicago. Salamendar updates this canvas automatically, so changes made here will be lost._
 
@@ -49,7 +80,7 @@ defmodule Salamendar.Render.MonthCanvasTest do
 
            | Sun | Mon | Tue | Wed | Thu | Fri | Sat |
            |---|---|---|---|---|---|---|
-           |   |   |   |   | **1**<br>10:00 Kickoff | **2** | **3** |
+           |  |  |  |  | **1**<br>10:00 Kickoff | **2** | **3** |
            | **4** | **5** | **6** | **7** | **8** | **9**<br>9:00 Standup<br>15:00 Retro | **10** |
            | **11** | **12**<br>Holiday | **13** | **14** | **15** | **16** | **17** |
            | **18** | **19** | **20** | **21** | **22** | **23** | **24** |
@@ -57,12 +88,59 @@ defmodule Salamendar.Render.MonthCanvasTest do
            """
   end
 
+  describe "sizing" do
+    test "pads every weekday header the same" do
+      [header | _] = grid_rows(MonthCanvas.render([], @october, @opts))
+
+      assert cells(header) ==
+               Enum.map(~w(Sun Mon Tue Wed Thu Fri Sat), &(&1 <> String.duplicate(@nbsp, 23)))
+    end
+
+    test "gives every cell the day plus seven lines" do
+      [_header | rows] = grid_rows(MonthCanvas.render(meetings(3), @october, @opts))
+
+      for row <- rows, cell <- cells(row) do
+        assert length(String.split(cell, "<br>")) == 8
+      end
+    end
+
+    test "cuts long entries to 18 characters" do
+      events = [
+        timed(
+          "Design review with the whole team",
+          ~U[2026-10-09 18:00:00Z],
+          ~U[2026-10-09 19:00:00Z]
+        )
+      ]
+
+      assert visible(MonthCanvas.render(events, @october, @opts)) =~
+               "| **9**<br>13:00 Design revi… |"
+    end
+  end
+
+  describe "busy days" do
+    test "show up to seven entries" do
+      assert visible(MonthCanvas.render(meetings(7), @october, @opts)) =~
+               "| **9**<br>9:00 M1<br>9:10 M2<br>9:20 M3<br>9:30 M4<br>9:40 M5<br>9:50 M6<br>10:00 M7 |"
+    end
+
+    test "show six entries and a count beyond that" do
+      markdown = MonthCanvas.render(meetings(9), @october, @opts)
+
+      assert visible(markdown) =~
+               "| **9**<br>9:00 M1<br>9:10 M2<br>9:20 M3<br>9:30 M4<br>9:40 M5<br>9:50 M6<br>+3 more |"
+
+      # "Coming up" stops at five.
+      assert markdown |> String.split("\n") |> Enum.count(&String.starts_with?(&1, "- ")) == 5
+    end
+  end
+
   test "starts the grid on week_start" do
     [header, first | _] =
-      grid_rows(MonthCanvas.render([], @october, Keyword.put(@opts, :week_start, 1)))
+      grid_rows(visible(MonthCanvas.render([], @october, Keyword.put(@opts, :week_start, 1))))
 
     assert header == "| Mon | Tue | Wed | Thu | Fri | Sat | Sun |"
-    assert first == "|   |   |   | **1** | **2** | **3** | **4** |"
+    assert first == "|  |  |  | **1** | **2** | **3** | **4** |"
   end
 
   test "puts the 1st in the right column for a month starting on each weekday" do
@@ -75,31 +153,13 @@ defmodule Salamendar.Render.MonthCanvasTest do
           ~D[2026-05-01],
           ~D[2026-08-01]
         ] do
-      [_header, first_row | _] = grid_rows(MonthCanvas.render([], Period.month(first), @opts))
-      cells = first_row |> String.trim("|") |> String.split("|") |> Enum.map(&String.trim/1)
+      [_header, first_row | _] =
+        grid_rows(visible(MonthCanvas.render([], Period.month(first), @opts)))
 
+      cells = cells(first_row)
       assert Enum.find_index(cells, &(&1 == "**1**")) == Period.weekday(first)
       assert length(cells) == 7
     end
-  end
-
-  test "a busy day shows three entries and a count" do
-    events =
-      for hour <- 14..20,
-          do:
-            timed(
-              "Meeting #{hour}",
-              DateTime.new!(~D[2026-10-09], Time.new!(hour, 0, 0)),
-              DateTime.new!(~D[2026-10-09], Time.new!(hour, 30, 0))
-            )
-
-    markdown = MonthCanvas.render(events, @october, @opts)
-
-    assert markdown =~
-             "| **9**<br>9:00 Meeting 14<br>10:00 Meeting 15<br>11:00 Meeting 16<br>+4 more |"
-
-    # "Coming up" stops at five.
-    assert markdown |> String.split("\n") |> Enum.count(&String.starts_with?(&1, "- ")) == 5
   end
 
   test "lists all-day events before timed ones in a cell" do
@@ -108,7 +168,8 @@ defmodule Salamendar.Render.MonthCanvasTest do
       all_day("Day off", ~D[2026-10-09], ~D[2026-10-10])
     ]
 
-    assert MonthCanvas.render(events, @october, @opts) =~ "| **9**<br>Day off<br>0:00 Early |"
+    assert visible(MonthCanvas.render(events, @october, @opts)) =~
+             "| **9**<br>Day off<br>0:00 Early |"
   end
 
   test "an empty month" do
@@ -125,7 +186,7 @@ defmodule Salamendar.Render.MonthCanvasTest do
       all_day("All November", ~D[2026-11-01], ~D[2026-12-01])
     ]
 
-    markdown = MonthCanvas.render(events, @october, @opts)
+    markdown = visible(MonthCanvas.render(events, @october, @opts))
 
     assert markdown =~ "## Multi-day events\n- Sep 28 – Oct 2 · Started in September\n\n"
     refute markdown =~ "<br>"
@@ -144,7 +205,8 @@ defmodule Salamendar.Render.MonthCanvasTest do
 
     markdown = MonthCanvas.render(events, @october, @opts)
 
-    assert markdown =~ "9:00 a ∣ b ‹br› ![] (@U123) [x] (https://e.x) next |"
+    assert markdown =~ "- Fri, Oct 9 9:00 · a ∣ b ‹br› ![] (@U123) [x] (https://e.x) next\n"
+    assert visible(markdown) =~ "| **9**<br>9:00 a ∣ b ‹br› !… |"
     refute markdown =~ "]("
   end
 end

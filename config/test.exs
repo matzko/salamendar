@@ -28,4 +28,7 @@ config :salamendar, Salamendar.SlackAPI.Client,
 # Use the bundled tz data; don't fetch updates over the network in tests.
 config :tzdata, :autoupdate, :disabled
 
+# Jobs are only inserted; tests run them with `Oban.Testing.perform_job/3`.
+config :salamendar, Oban, testing: :manual
+
 config :logger, level: :warning

@@ -36,6 +36,9 @@ oauth_config:
       - canvases:write
       # conversations.join in `/salamendar enable` (public channels).
       - channels:join
+      # files.info, to download and inspect existing canvases while
+      # working out the month grid's layout.
+      - files:read
 settings:
   event_subscriptions:
     bot_events:
