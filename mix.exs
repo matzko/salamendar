@@ -39,7 +39,7 @@ defmodule Salamendar.MixProject do
       # modal validation errors.
       {:slack_elixir,
        git: "https://github.com/matzko/slack_elixir.git",
-       ref: "afec212f50b2fea252cef32472c3dc4a8394d5df"},
+       ref: "cb5c9ec6a2babb09e905ef2f31dc4bc3c3073abd"},
       {:jason, "~> 1.4"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.21"},
