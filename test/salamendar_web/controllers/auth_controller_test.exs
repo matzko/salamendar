@@ -30,7 +30,7 @@ defmodule SalamendarWeb.AuthControllerTest do
       assert get_resp_header(conn, "referrer-policy") == ["no-referrer"]
 
       # The session works for the page it lands on.
-      assert html_response(get(recycle(conn), ~p"/"), 200) =~ "Signed in as Ada"
+      assert html_response(get(recycle(conn), ~p"/"), 200) =~ "Ada"
     end
 
     test "redirects to a local return_to", %{conn: conn, user: user} do

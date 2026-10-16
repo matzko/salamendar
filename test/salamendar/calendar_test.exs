@@ -384,4 +384,95 @@ defmodule Salamendar.CalendarTest do
       assert [] = Calendar.list_user_events_on(havana, ~D[2026-10-31])
     end
   end
+
+  describe "list_visible_events/4" do
+    # The week of Oct 11, 2026 as a browser in Chicago asks for it: local
+    # midnights (CDT, UTC-5) and local dates.
+    @from {~U[2026-10-11 05:00:00Z], ~D[2026-10-11]}
+    @to {~U[2026-10-18 05:00:00Z], ~D[2026-10-18]}
+
+    setup do
+      owner = user!("U1")
+      viewer = user!("U2")
+      %{owner: owner, viewer: viewer, channel: channel!("C1", members: [viewer])}
+    end
+
+    test "timed events overlap by instant, excluding ones that only touch the edges", %{
+      owner: owner,
+      viewer: viewer,
+      channel: channel
+    } do
+      event!(owner, timed(~U[2026-10-11 04:00:00Z], ~U[2026-10-11 05:00:00Z], "Before"), [channel])
+
+      event!(owner, timed(~U[2026-10-11 04:30:00Z], ~U[2026-10-11 05:30:00Z], "Into"), [channel])
+
+      event!(owner, timed(~U[2026-10-18 04:30:00Z], ~U[2026-10-18 05:30:00Z], "Out of"), [channel])
+
+      event!(owner, timed(~U[2026-10-18 05:00:00Z], ~U[2026-10-18 06:00:00Z], "After"), [channel])
+
+      assert titles(Calendar.list_visible_events(viewer, @from, @to)) == ["Into", "Out of"]
+    end
+
+    test "all-day events overlap by date, excluding ones that only touch the edges", %{
+      owner: owner,
+      viewer: viewer,
+      channel: channel
+    } do
+      event!(owner, all_day(~D[2026-10-10], ~D[2026-10-11], "Before"), [channel])
+      event!(owner, all_day(~D[2026-10-10], ~D[2026-10-12], "Into"), [channel])
+      event!(owner, all_day(~D[2026-10-17], ~D[2026-10-19], "Out of"), [channel])
+      event!(owner, all_day(~D[2026-10-18], ~D[2026-10-19], "After"), [channel])
+
+      assert titles(Calendar.list_visible_events(viewer, @from, @to)) == ["Into", "Out of"]
+    end
+
+    test "preloads owners and channels", %{owner: owner, viewer: viewer, channel: channel} do
+      event!(owner, all_day(~D[2026-10-12], ~D[2026-10-13]), [channel])
+
+      assert [%Event{owner: %Accounts.User{id: owner_id}, channels: [%Channels.Channel{}]}] =
+               Calendar.list_visible_events(viewer, @from, @to)
+
+      assert owner_id == owner.id
+    end
+
+    test ":channel_ids limits to those channels, plus the user's own events", %{
+      owner: owner,
+      viewer: viewer,
+      channel: channel
+    } do
+      other = channel!("C2", members: [viewer])
+      event!(owner, all_day(~D[2026-10-12], ~D[2026-10-13], "In C1"), [channel])
+      event!(owner, all_day(~D[2026-10-12], ~D[2026-10-13], "In C2"), [other])
+      event!(viewer, all_day(~D[2026-10-12], ~D[2026-10-13], "Mine in C2"), [other])
+
+      assert titles(Calendar.list_visible_events(viewer, @from, @to, channel_ids: [channel.id])) ==
+               ["In C1", "Mine in C2"]
+
+      assert titles(
+               Calendar.list_visible_events(viewer, @from, @to,
+                 channel_ids: [channel.id],
+                 own: false
+               )
+             ) == ["In C1"]
+
+      assert titles(Calendar.list_visible_events(viewer, @from, @to, channel_ids: [], own: true)) ==
+               ["Mine in C2"]
+    end
+
+    test ":channel_ids can't reveal channels the user can't see", %{owner: owner, viewer: viewer} do
+      private = channel!("C2", private: true, members: [owner])
+      event!(owner, all_day(~D[2026-10-12], ~D[2026-10-13]), [private])
+
+      assert [] = Calendar.list_visible_events(viewer, @from, @to, channel_ids: [private.id])
+    end
+
+    test "ignores other workspaces" do
+      outsider = user!("U3", "Etc/UTC", "TCA2")
+      channel = channel!("C9", team_id: "TCA2", members: [outsider])
+      event!(outsider, all_day(~D[2026-10-12], ~D[2026-10-13]), [channel])
+      viewer = user!("U2")
+
+      assert [] = Calendar.list_visible_events(viewer, @from, @to)
+    end
+  end
 end

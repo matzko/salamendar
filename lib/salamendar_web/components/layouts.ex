@@ -15,11 +15,12 @@ defmodule SalamendarWeb.Layouts do
       </Layouts.app>
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
+  attr :wide, :boolean, default: false, doc: "use the full window width"
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <main class="page">
+    <main class={["page", @wide && "page-wide"]}>
       {render_slot(@inner_block)}
     </main>
 

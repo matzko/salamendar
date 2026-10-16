@@ -10,7 +10,9 @@ defmodule SalamendarWeb do
   functions in their own modules.
   """
 
-  def static_paths, do: ~w(assets favicon.ico robots.txt)
+  # `vendor` holds third-party builds served as-is (see `just
+  # update-event-calendar`).
+  def static_paths, do: ~w(assets vendor favicon.ico robots.txt)
 
   def router do
     quote do

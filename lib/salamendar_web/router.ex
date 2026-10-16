@@ -30,7 +30,7 @@ defmodule SalamendarWeb.Router do
     delete "/session", AuthController, :delete
 
     live_session :signed_in, on_mount: [{SalamendarWeb.UserAuth, :require_user}] do
-      live "/", HomeLive
+      live "/", CalendarLive
     end
   end
 end

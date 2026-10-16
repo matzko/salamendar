@@ -146,14 +146,31 @@ defmodule Salamendar.Calendar do
     |> Repo.all()
   end
 
-  @doc """
-  Events on `date` in `user`'s time zone that `user` should see on their
-  Home tab: those in calendar-enabled, unarchived channels they're a member
-  of, plus their own (wherever they are). All-day events first, then by
-  start.
+  @typedoc """
+  One edge of a range of local days, in both forms: the instant of that
+  local midnight (for timed events) and its date (for all-day events, whose
+  dates are the same everywhere).
   """
-  @spec list_user_events_on(User.t(), Date.t()) :: [Event.t()]
-  def list_user_events_on(%User{} = user, %Date{} = date) do
+  @type day_edge :: {DateTime.t(), Date.t()}
+
+  @doc """
+  Events `user` can see that overlap `[from, to)`: those in calendar-enabled,
+  unarchived channels they're a member of, plus their own (wherever they
+  are). All-day events first, then by start. `:owner` and `:channels` are
+  preloaded.
+
+  Options:
+
+    * `:channel_ids` - only events in these channels (still only ones the
+      user can see), plus their own if `:own` is true. Defaults to all.
+    * `:own` - with `:channel_ids`, whether to include the user's own
+      events in other channels. Defaults to true.
+  """
+  @spec list_visible_events(User.t(), day_edge(), day_edge(), keyword()) :: [Event.t()]
+  def list_visible_events(%User{} = user, from, to, opts \\ []) do
+    channel_ids = Keyword.get(opts, :channel_ids)
+    own? = is_nil(channel_ids) or Keyword.get(opts, :own, true)
+
     # A subquery rather than joins, so an event in several of the user's
     # channels comes back once.
     via_channels =
@@ -166,21 +183,52 @@ defmodule Salamendar.Calendar do
         select: ec.event_id
       )
 
+    via_channels =
+      if channel_ids,
+        do: where(via_channels, [ec], ec.channel_id in type(^channel_ids, {:array, :binary_id})),
+        else: via_channels
+
+    visible =
+      if own?,
+        do: dynamic([e], e.id in subquery(via_channels) or e.owner_id == ^user.id),
+        else: dynamic([e], e.id in subquery(via_channels))
+
     from(e in Event,
       where: e.slack_team_id == ^user.slack_team_id,
-      where: e.id in subquery(via_channels) or e.owner_id == ^user.id,
-      where: ^overlaps(date, Date.add(date, 1), Accounts.time_zone(user)),
-      order_by: ^chronological()
+      where: ^visible,
+      where: ^overlaps(from, to),
+      order_by: ^chronological(),
+      preload: [:owner, :channels]
     )
     |> Repo.all()
   end
 
-  # Events overlapping the local days [first, stop) in `time_zone`. Timed
-  # events are compared in UTC; all-day dates are the same everywhere.
-  defp overlaps(first, stop, time_zone) do
-    window_start = Period.start_of_day(first, time_zone)
-    window_end = Period.start_of_day(stop, time_zone)
+  @doc """
+  Events on `date` in `user`'s time zone that `user` should see on their
+  Home tab: `list_visible_events/4` for that one day.
+  """
+  @spec list_user_events_on(User.t(), Date.t()) :: [Event.t()]
+  def list_user_events_on(%User{} = user, %Date{} = date) do
+    time_zone = Accounts.time_zone(user)
+    next = Date.add(date, 1)
 
+    list_visible_events(
+      user,
+      {Period.start_of_day(date, time_zone), date},
+      {Period.start_of_day(next, time_zone), next}
+    )
+  end
+
+  # Events overlapping the local days [first, stop) in `time_zone`.
+  defp overlaps(first, stop, time_zone) do
+    overlaps(
+      {Period.start_of_day(first, time_zone), first},
+      {Period.start_of_day(stop, time_zone), stop}
+    )
+  end
+
+  # Timed events are compared by instant; all-day events by date.
+  defp overlaps({window_start, first}, {window_end, stop}) do
     dynamic(
       [e],
       (not e.all_day and e.starts_at < ^window_end and e.ends_at > ^window_start) or

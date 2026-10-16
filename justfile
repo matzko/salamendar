@@ -53,6 +53,12 @@ reset: up
 test *args: up
     {{mix}} test {{args}}
 
+# Replace the vendored EventCalendar build: just update-event-calendar 5.17.1
+update-event-calendar version:
+    for f in event-calendar.min.js event-calendar.min.css; do \
+        curl -fsSL -o priv/static/vendor/$f https://cdn.jsdelivr.net/npm/@event-calendar/build@{{version}}/dist/$f; \
+    done
+
 # Format check, Credo, and Dialyzer
 lint:
     {{mix}} format --check-formatted

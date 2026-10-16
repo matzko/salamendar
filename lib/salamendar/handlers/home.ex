@@ -11,7 +11,7 @@ defmodule Salamendar.Handlers.Home do
 
   require Logger
 
-  alias Salamendar.{Accounts, Calendar, Repo, SlackAPI}
+  alias Salamendar.{Accounts, Calendar, SlackAPI}
   alias Salamendar.Accounts.User
   alias Salamendar.Render.{HomeTab, Period}
   alias SalamendarWeb.SignInLink
@@ -30,7 +30,6 @@ defmodule Salamendar.Handlers.Home do
     blocks =
       user
       |> Calendar.list_user_events_on(today)
-      |> Repo.preload(:channels)
       |> HomeTab.render(user, today, calendar_url: SignInLink.url(user))
 
     SlackAPI.post("views.publish", %{
