@@ -1,0 +1,26 @@
+defmodule SalamendarWeb.Router do
+  use SalamendarWeb, :router
+
+  pipeline :browser do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :fetch_live_flash
+    plug :put_root_layout, html: {SalamendarWeb.Layouts, :root}
+    plug :protect_from_forgery
+    # Sign-in links carry a token in the URL, so no page may leak its URL
+    # through `Referer`.
+    plug :put_secure_browser_headers, %{"referrer-policy" => "no-referrer"}
+  end
+
+  # No pipeline: probes get no session and no database work, and aren't
+  # logged.
+  scope "/", SalamendarWeb do
+    get "/healthz", HealthController, :show, log: false
+  end
+
+  scope "/", SalamendarWeb do
+    pipe_through :browser
+
+    live "/", HomeLive
+  end
+end

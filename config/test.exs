@@ -31,4 +31,14 @@ config :tzdata, :autoupdate, :disabled
 # Jobs are only inserted; tests run them with `Oban.Testing.perform_job/3`.
 config :salamendar, Oban, testing: :manual
 
+# No HTTP server under test; `Phoenix.ConnTest` calls the endpoint directly.
+config :salamendar, SalamendarWeb.Endpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4002],
+  secret_key_base: "OjGKl4Oz3xd4ENDfbxcaZIaYfviotWfPK4WEO6GrotEhl49MA1yE73ThtypJRK8O",
+  server: false
+
+config :phoenix, :plug_init_mode, :runtime
+config :phoenix, sort_verified_routes_query_params: true
+config :phoenix_live_view, enable_expensive_runtime_checks: true
+
 config :logger, level: :warning

@@ -10,6 +10,8 @@ defmodule Salamendar.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
+      compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      listeners: [Phoenix.CodeReloader],
       dialyzer: [
         plt_add_apps: [:mix, :ex_unit],
         plt_local_path: "priv/plts",
@@ -45,9 +47,15 @@ defmodule Salamendar.MixProject do
       {:postgrex, "~> 0.21"},
       {:tzdata, "~> 1.1"},
       {:oban, "~> 2.24"},
+      {:phoenix, "~> 1.8"},
+      {:phoenix_live_view, "~> 1.2"},
+      {:phoenix_html, "~> 4.3"},
+      {:bandit, "~> 1.12"},
+      {:plug, "~> 1.16"},
+      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
+      {:phoenix_live_reload, "~> 1.7", only: :dev},
+      {:lazy_html, "~> 0.1", only: :test},
       {:mox, "~> 1.2", only: :test},
-      # For `Req.Test` stubs of Slack's HTTP API.
-      {:plug, "~> 1.16", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
@@ -57,6 +65,9 @@ defmodule Salamendar.MixProject do
     [
       "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
+      "assets.setup": ["esbuild.install --if-missing"],
+      "assets.build": ["compile", "esbuild salamendar"],
+      "assets.deploy": ["esbuild salamendar --minify", "phx.digest"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
     ]
   end

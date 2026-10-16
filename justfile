@@ -30,9 +30,10 @@ psql db="salamendar_dev":
 # First-time setup: deps, database, migrations
 setup: up
     {{mix}} deps.get
+    {{mix}} assets.setup
     {{mix}} ecto.setup
 
-# Run the bot in IEx
+# Run the bot and the web calendar (http://localhost:4000) in IEx
 run: up
     mise exec -- iex -S mix
 

@@ -6,11 +6,20 @@ defmodule Salamendar.Application do
   def start(_type, _args) do
     children = [
       Salamendar.Repo,
-      {Oban, Application.fetch_env!(:salamendar, Oban)} | slack_children()
+      {Oban, Application.fetch_env!(:salamendar, Oban)},
+      {Phoenix.PubSub, name: Salamendar.PubSub},
+      SalamendarWeb.Endpoint | slack_children()
     ]
 
     opts = [strategy: :one_for_one, name: Salamendar.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Tells Phoenix about config changes on hot upgrades.
+  @impl true
+  def config_change(changed, _new, removed) do
+    SalamendarWeb.Endpoint.config_change(changed, removed)
+    :ok
   end
 
   # `Slack.Supervisor.init/1` fetches the bot's identity over the network and

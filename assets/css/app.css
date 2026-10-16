@@ -1,0 +1,122 @@
+/* Plain CSS, bundled by esbuild. No Tailwind: the pages are few and small. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --border: #d1d9e0;
+  --info-bg: #ddf4ff;
+  --info-fg: #0a3069;
+  --error-bg: #ffebe9;
+  --error-fg: #82071e;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --border: #3d444d;
+    --info-bg: #0c2d6b;
+    --info-fg: #cae8ff;
+    --error-bg: #5d0f12;
+    --error-fg: #ffdcd7;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  line-height: 1.5;
+}
+
+.page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+/* Flash notices */
+
+.flash-group {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: calc(100vw - 2rem);
+}
+
+.flash {
+  position: relative;
+  width: 22rem;
+  max-width: 100%;
+  padding: 0.75rem 2.25rem 0.75rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+}
+
+.flash p {
+  margin: 0;
+}
+
+.flash-title {
+  font-weight: 600;
+}
+
+.flash-info {
+  background: var(--info-bg);
+  color: var(--info-fg);
+}
+
+.flash-error {
+  background: var(--error-bg);
+  color: var(--error-fg);
+}
+
+.flash-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+/* Transitions used by CoreComponents.show/2 and hide/2 */
+
+.fade-in,
+.fade-out {
+  transition: opacity 200ms ease;
+}
+
+.fade-from {
+  opacity: 0;
+}
+
+.fade-to {
+  opacity: 1;
+}
+
+/* LiveView's wrapper divs shouldn't affect layout. */
+[data-phx-session],
+[data-phx-teleported-src] {
+  display: contents;
+}

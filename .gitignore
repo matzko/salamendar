@@ -23,6 +23,10 @@ erl_crash.dump
 salamendar-*.tar
 
 
+# Assets built by esbuild, and the digest manifest.
+/priv/static/assets/
+/priv/static/cache_manifest.json
+
 # Local secrets
 .env
 config/.env.exs

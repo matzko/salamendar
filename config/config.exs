@@ -34,6 +34,33 @@ config :salamendar, Oban,
      ]}
   ]
 
+# The web calendar. `PORT` and, in prod, `PHX_HOST` are read in
+# `config/runtime.exs`.
+config :salamendar, SalamendarWeb.Endpoint,
+  url: [host: "localhost"],
+  adapter: Bandit.PhoenixAdapter,
+  render_errors: [
+    formats: [html: SalamendarWeb.ErrorHTML, json: SalamendarWeb.ErrorJSON],
+    layout: false
+  ],
+  pubsub_server: Salamendar.PubSub,
+  live_view: [signing_salt: "bF09QLFU"]
+
+# The base of links to the web calendar sent to Slack.
+config :salamendar, :web_url, "http://localhost:4000"
+
+config :phoenix, :json_library, Jason
+
+# Bundles `app.js` and `app.css` into `priv/static/assets/{js,css}/`.
+config :esbuild,
+  version: "0.25.4",
+  salamendar: [
+    args:
+      ~w(js/app.js css/app.css --bundle --target=es2022 --outdir=../priv/static/assets --external:/fonts/* --external:/images/* --alias:@=.),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
+  ]
+
 import_config "#{config_env()}.exs"
 
 # Local, git-ignored overrides (e.g. Slack tokens) for dev. Copy

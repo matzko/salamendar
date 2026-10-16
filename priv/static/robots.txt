@@ -1,0 +1,3 @@
+# Salamendar's pages are private to a Slack workspace.
+User-agent: *
+Disallow: /
