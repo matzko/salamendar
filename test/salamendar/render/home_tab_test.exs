@@ -82,6 +82,20 @@ defmodule Salamendar.Render.HomeTabTest do
            ]
   end
 
+  test "adds an Open calendar button when given a URL" do
+    assert [_header, %{type: "actions", elements: [_add, button]} | _] =
+             HomeTab.render([], @user, @date,
+               calendar_url: "http://localhost:4000/auth/slack?token=t"
+             )
+
+    assert button == %{
+             type: "button",
+             action_id: "open_calendar",
+             url: "http://localhost:4000/auth/slack?token=t",
+             text: %{type: "plain_text", text: "Open calendar", emoji: true}
+           }
+  end
+
   test "has a friendly empty state" do
     assert [_header, _actions, _divider, %{type: "section", text: %{text: text}}] =
              HomeTab.render([], @user, @date)

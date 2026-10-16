@@ -7,6 +7,7 @@ defmodule Salamendar.Bot.CommandsTest do
   alias Salamendar.{Bot, Channels}
   alias Salamendar.SlackAPI.Mock
   alias Salamendar.Workers.{DeleteCanvases, ReconcileMembers, SyncCanvas}
+  alias SalamendarWeb.SignInLink
 
   setup :verify_on_exit!
 
@@ -239,5 +240,42 @@ defmodule Salamendar.Bot.CommandsTest do
     end)
 
     run("new")
+  end
+
+  describe "open" do
+    # Expects an ephemeral reply with a link button, and returns its URL's
+    # query.
+    defp open_link(attrs) do
+      test = self()
+
+      expect(Mock, :respond, fn @response_url, %{response_type: "ephemeral", blocks: blocks} ->
+        send(test, {:blocks, blocks})
+        :ok
+      end)
+
+      run("open", attrs)
+
+      assert_received {:blocks, [%{accessory: %{action_id: "open_calendar", url: url}}]}
+      assert "http://localhost:4000/auth/slack?" <> query = url
+      URI.decode_query(query)
+    end
+
+    test "replies with a sign-in link focused on the channel" do
+      query = open_link(%{})
+
+      user =
+        Salamendar.Repo.get_by!(Salamendar.Accounts.User,
+          slack_team_id: "TCM1",
+          slack_user_id: "U1"
+        )
+
+      assert SignInLink.verify(query["token"]) == {:ok, user.id}
+      assert query["return_to"] == "/?channel=C1"
+    end
+
+    test "doesn't focus a direct message" do
+      query = open_link(%{"channel_id" => "D1"})
+      refute Map.has_key?(query, "return_to")
+    end
   end
 end

@@ -1,7 +1,8 @@
 defmodule Salamendar.Handlers.Home do
   @moduledoc """
   Publishes a user's App Home tab: their events for today, in their time
-  zone.
+  zone, and a sign-in link to the web calendar. The link expires after a
+  day, and the tab is republished each time it's opened, so it stays fresh.
 
   The user's name and time zone are refreshed from `users.info` when they
   were last fetched more than a day ago, so stub users created by member
@@ -13,6 +14,7 @@ defmodule Salamendar.Handlers.Home do
   alias Salamendar.{Accounts, Calendar, Repo, SlackAPI}
   alias Salamendar.Accounts.User
   alias Salamendar.Render.{HomeTab, Period}
+  alias SalamendarWeb.SignInLink
 
   @profile_max_age_seconds 24 * 60 * 60
 
@@ -29,7 +31,7 @@ defmodule Salamendar.Handlers.Home do
       user
       |> Calendar.list_user_events_on(today)
       |> Repo.preload(:channels)
-      |> HomeTab.render(user, today)
+      |> HomeTab.render(user, today, calendar_url: SignInLink.url(user))
 
     SlackAPI.post("views.publish", %{
       user_id: slack_user_id,

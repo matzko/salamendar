@@ -5,7 +5,7 @@ defmodule Salamendar.Render.HomeTab do
   Times are `<!date^…>` tokens, so Slack shows them in each viewer's own
   time zone and format; the fallback text (for clients that can't) uses the
   user's time zone. Events the user owns get an overflow menu with
-  Edit and Delete.
+  Edit and Delete. An "Open calendar" button links to the web calendar.
   """
 
   alias Salamendar.Accounts
@@ -23,6 +23,13 @@ defmodule Salamendar.Render.HomeTab do
   def add_event_action_id, do: "add_event"
 
   @doc """
+  Action ID of the "Open calendar" link button. Slack sends a
+  `block_actions` event when it's clicked, which the bot ignores.
+  """
+  @spec open_calendar_action_id() :: String.t()
+  def open_calendar_action_id, do: "open_calendar"
+
+  @doc """
   Action ID of an owned event's overflow menu. Its option values are
   `"edit:<event id>"` and `"delete:<event id>"`.
   """
@@ -33,9 +40,11 @@ defmodule Salamendar.Render.HomeTab do
   Blocks for `user`'s Home tab on `date`, showing `events` (e.g. from
   `Calendar.list_user_events_on/2`) in order. Channels are listed when the
   events' `:channels` are preloaded.
+
+  `:calendar_url` in `opts` adds the "Open calendar" button.
   """
-  @spec render([Event.t()], User.t(), Date.t()) :: [map()]
-  def render(events, %User{} = user, %Date{} = date) do
+  @spec render([Event.t()], User.t(), Date.t(), keyword()) :: [map()]
+  def render(events, %User{} = user, %Date{} = date, opts \\ []) do
     time_zone = Accounts.time_zone(user)
 
     top = [
@@ -45,19 +54,33 @@ defmodule Salamendar.Render.HomeTab do
       },
       %{
         type: "actions",
-        elements: [
-          %{
-            type: "button",
-            action_id: add_event_action_id(),
-            style: "primary",
-            text: %{type: "plain_text", text: "Add event", emoji: true}
-          }
-        ]
+        elements:
+          [
+            %{
+              type: "button",
+              action_id: add_event_action_id(),
+              style: "primary",
+              text: %{type: "plain_text", text: "Add event", emoji: true}
+            }
+          ] ++ open_calendar_button(opts[:calendar_url])
       },
       %{type: "divider"}
     ]
 
     top ++ event_blocks(events, user, date, time_zone, @max_blocks - length(top))
+  end
+
+  defp open_calendar_button(nil), do: []
+
+  defp open_calendar_button(url) do
+    [
+      %{
+        type: "button",
+        action_id: open_calendar_action_id(),
+        url: url,
+        text: %{type: "plain_text", text: "Open calendar", emoji: true}
+      }
+    ]
   end
 
   defp event_blocks([], _user, _date, _time_zone, _room) do

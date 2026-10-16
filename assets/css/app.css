@@ -46,6 +46,18 @@ body {
   padding: 1rem;
 }
 
+/* Short notices, such as "This link has expired" */
+
+.notice {
+  max-width: 32rem;
+  margin: 4rem auto;
+  text-align: center;
+}
+
+.notice p {
+  color: var(--muted);
+}
+
 /* Flash notices */
 
 .flash-group {

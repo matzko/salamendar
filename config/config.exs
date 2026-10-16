@@ -51,6 +51,9 @@ config :salamendar, :web_url, "http://localhost:4000"
 
 config :phoenix, :json_library, Jason
 
+# Sign-in links carry a token in the query string; keep it out of logs.
+config :phoenix, :filter_parameters, ["password", "secret", "token"]
+
 # Bundles `app.js` and `app.css` into `priv/static/assets/{js,css}/`.
 config :esbuild,
   version: "0.25.4",

@@ -4,6 +4,7 @@ defmodule Salamendar.Handlers.Commands do
 
     * `enable` / `disable`: turn the channel's calendar on or off.
     * `new`: open the form for a new event.
+    * `open`: reply with a sign-in link to the web calendar.
     * `tz [zone]`: show or set the channel's time zone.
     * `week-start [day]`: show or set the grid's first day of the week.
 
@@ -14,16 +15,18 @@ defmodule Salamendar.Handlers.Commands do
 
   require Logger
 
-  alias Salamendar.{Channels, SlackAPI}
+  alias Salamendar.{Accounts, Channels, SlackAPI}
   alias Salamendar.Channels.Channel
   alias Salamendar.Handlers.{ChannelEvents, EventForm}
   alias Salamendar.Workers.{ReconcileMembers, SyncCanvas}
+  alias SalamendarWeb.SignInLink
 
   @usage """
   *Salamendar* keeps a shared calendar in a channel's canvas.
   • `/salamendar enable`: turn on the calendar in this channel
   • `/salamendar disable`: turn it off (events are kept)
   • `/salamendar new`: add an event
+  • `/salamendar open`: open the calendar in your browser
   • `/salamendar tz America/Chicago`: set this channel's time zone
   • `/salamendar week-start monday`: set the calendar's first day of the week
   """
@@ -39,6 +42,7 @@ defmodule Salamendar.Handlers.Commands do
       ["enable"] -> enable(team_id, payload)
       ["disable"] -> disable(team_id, payload)
       ["new"] -> new_event(team_id, payload)
+      ["open"] -> open(team_id, payload)
       ["tz" | args] -> time_zone(team_id, payload, args)
       ["week-start" | args] -> week_start(team_id, payload, args)
       _ -> reply(payload, @usage)
@@ -170,6 +174,36 @@ defmodule Salamendar.Handlers.Commands do
     end
   end
 
+  # -- open -----------------------------------------------------------------------
+
+  # The link goes in a button: Slack doesn't unfurl button URLs, so the token
+  # isn't fetched by anyone else.
+  defp open(team_id, %{"user_id" => user_id, "channel_id" => channel_id} = payload) do
+    {:ok, user} = Accounts.get_or_create_user(team_id, user_id)
+    url = SignInLink.url(user, focus(channel_id))
+
+    respond(payload, %{
+      text: "Here's your link to the calendar.",
+      blocks: [
+        %{
+          type: "section",
+          text: %{type: "mrkdwn", text: "Here's your link to the calendar. It works for a day."},
+          accessory: %{
+            type: "button",
+            action_id: "open_calendar",
+            url: url,
+            style: "primary",
+            text: %{type: "plain_text", text: "Open calendar", emoji: true}
+          }
+        }
+      ]
+    })
+  end
+
+  # Direct messages have no calendar to focus.
+  defp focus("D" <> _), do: []
+  defp focus(channel_id), do: [return_to: "/?" <> URI.encode_query(channel: channel_id)]
+
   # -- settings -------------------------------------------------------------------
 
   defp time_zone(team_id, payload, args) do
@@ -235,8 +269,10 @@ defmodule Salamendar.Handlers.Commands do
 
   defp day_name(index), do: @weekdays |> Enum.at(index) |> String.capitalize()
 
-  defp reply(%{"response_url" => response_url}, text) do
-    case SlackAPI.respond(response_url, %{response_type: "ephemeral", text: text}) do
+  defp reply(payload, text), do: respond(payload, %{text: text})
+
+  defp respond(%{"response_url" => response_url}, message) do
+    case SlackAPI.respond(response_url, Map.put(message, :response_type, "ephemeral")) do
       :ok -> :ok
       error -> Logger.error("Replying to /salamendar failed: #{inspect(error)}")
     end

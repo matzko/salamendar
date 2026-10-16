@@ -7,6 +7,7 @@ defmodule Salamendar.Bot.HomeTest do
   alias Salamendar.{Accounts, Bot, Calendar, Channels}
   alias Salamendar.SlackAPI.Mock
   alias Salamendar.Workers.PublishHome
+  alias SalamendarWeb.SignInLink
 
   setup :verify_on_exit!
 
@@ -87,6 +88,25 @@ defmodule Salamendar.Bot.HomeTest do
     assert user.name == "Ada Lovelace"
     assert user.time_zone == "Etc/UTC"
     assert %DateTime{} = user.profile_synced_at
+  end
+
+  test "links to the web calendar with a sign-in token for this user" do
+    {:ok, user} =
+      Accounts.get_or_create_user("THO1", "U1", %{profile_synced_at: DateTime.utc_now()})
+
+    expect_publish()
+
+    home_opened()
+
+    assert_received {:blocks, blocks}
+
+    [url] =
+      for %{type: "actions", elements: elements} <- blocks,
+          %{action_id: "open_calendar", url: url} <- elements,
+          do: url
+
+    assert "http://localhost:4000/auth/slack?token=" <> token = url
+    assert SignInLink.verify(URI.decode_www_form(token)) == {:ok, user.id}
   end
 
   test "skips users.info for a fresh profile" do

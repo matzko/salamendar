@@ -33,6 +33,12 @@ defmodule Salamendar.Accounts do
   end
 
   @doc """
+  Returns the user with this ID, or nil.
+  """
+  @spec get_user(Ecto.UUID.t()) :: User.t() | nil
+  def get_user(id), do: Repo.get(User, id)
+
+  @doc """
   The time zone to show `user` times in: theirs from Slack, or the
   configured default (e.g. for stub users not yet fetched).
   """

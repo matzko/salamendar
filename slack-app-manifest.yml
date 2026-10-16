@@ -13,7 +13,7 @@ features:
   slash_commands:
     - command: /salamendar
       description: Shared channel calendar
-      usage_hint: "enable | disable | new | tz <zone> | week-start <day>"
+      usage_hint: "enable | disable | new | open | tz <zone> | week-start <day>"
       should_escape: false
 oauth_config:
   scopes:
