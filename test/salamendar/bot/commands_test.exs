@@ -6,7 +6,7 @@ defmodule Salamendar.Bot.CommandsTest do
 
   alias Salamendar.{Bot, Channels}
   alias Salamendar.SlackAPI.Mock
-  alias Salamendar.Workers.{DeleteCanvases, ReconcileMembers, SyncCanvas}
+  alias Salamendar.Workers.ReconcileMembers
   alias SalamendarWeb.SignInLink
 
   setup :verify_on_exit!
@@ -65,7 +65,7 @@ defmodule Salamendar.Bot.CommandsTest do
   end
 
   describe "enable" do
-    test "joins a public channel, enables it and creates its canvas" do
+    test "joins a public channel, enables it and replies with a link" do
       expect(Mock, :get, fn "conversations.info", %{channel: "C1"} ->
         {:ok,
          %{
@@ -79,38 +79,27 @@ defmodule Salamendar.Bot.CommandsTest do
          }}
       end)
 
+      # No other Slack calls (e.g. `canvases.create`): Mox fails on any.
       expect(Mock, :post, fn "conversations.join", %{channel: "C1"} -> {:ok, %{"ok" => true}} end)
 
-      expect(Mock, :post, fn "canvases.create", %{channel_id: "C1", title: "Calendar"} ->
-        {:ok, %{"ok" => true, "canvas_id" => "F1"}}
+      test = self()
+
+      expect(Mock, :respond, fn @response_url, %{text: text, blocks: blocks} ->
+        send(test, {:reply, text, blocks})
+        :ok
       end)
 
-      expect_reply()
       run("enable")
 
-      assert_received {:reply, text}
-      assert text =~ "The calendar is on"
+      assert_received {:reply, "The calendar is on" <> _,
+                       [%{accessory: %{action_id: "open_calendar", url: url}}]}
+
+      assert url =~ "return_to=%2F%3Fchannel%3DC1"
 
       channel = Channels.get_channel("TCM1", "C1")
       assert channel.calendar_enabled
       assert channel.name == "general"
-      assert [%{slack_canvas_id: "F1"}] = Channels.list_canvases(channel)
       assert_enqueued(worker: ReconcileMembers, args: %{channel_id: channel.id})
-      assert_enqueued(worker: SyncCanvas, args: %{channel_id: channel.id, kind: "month"})
-    end
-
-    test "reuses an existing canvas" do
-      channel = enabled_channel!()
-      {:ok, canvas} = Channels.get_or_create_canvas(channel, :month)
-      {:ok, _} = Channels.set_canvas_slack_id(canvas, "F1")
-
-      expect(Mock, :get, fn "conversations.info", _ ->
-        {:ok, %{"channel" => %{"id" => "C1", "name" => "general", "is_member" => true}}}
-      end)
-
-      expect_reply()
-      run("enable")
-      assert_received {:reply, "The calendar is on" <> _}
     end
 
     test "asks to be invited to a private channel it can't see" do
@@ -124,28 +113,6 @@ defmodule Salamendar.Bot.CommandsTest do
       refute Channels.get_channel("TCM1", "C1")
     end
 
-    test "explains a canvas tab that's already there" do
-      expect(Mock, :get, fn "conversations.info", _ ->
-        {:ok, %{"channel" => %{"id" => "C1", "name" => "general", "is_member" => true}}}
-      end)
-
-      expect(Mock, :post, fn "canvases.create", _ ->
-        {:error, "free_team_canvas_tab_already_exists"}
-      end)
-
-      expect_reply()
-      run("enable")
-
-      assert_received {:reply, text}
-      assert text =~ "already has a canvas tab"
-
-      # Enabled, so running it again retries the canvas.
-      channel = Channels.get_channel("TCM1", "C1")
-      assert channel.calendar_enabled
-      assert [%{slack_canvas_id: nil}] = Channels.list_canvases(channel)
-      refute_enqueued(worker: SyncCanvas)
-    end
-
     test "points DMs to a channel" do
       expect_reply()
       run("enable", %{"channel_id" => "D1"})
@@ -154,55 +121,20 @@ defmodule Salamendar.Bot.CommandsTest do
   end
 
   describe "disable" do
-    test "disables the calendar and schedules the canvas deletion" do
+    test "disables the calendar" do
       channel = enabled_channel!()
-      {:ok, _} = SyncCanvas.enqueue(channel.id)
       expect_reply()
 
       run("disable")
 
       assert_received {:reply, "The calendar is off" <> _}
       refute Repo.reload!(channel).calendar_enabled
-      assert_enqueued(worker: DeleteCanvases, args: %{channel_id: channel.id})
-      refute_enqueued(worker: SyncCanvas)
     end
 
     test "says so when the calendar isn't on" do
       expect_reply()
       run("disable")
       assert_received {:reply, "The calendar isn't on in this channel."}
-    end
-  end
-
-  describe "tz" do
-    test "shows and sets the time zone" do
-      channel = enabled_channel!()
-
-      expect_reply()
-      run("tz")
-      assert_received {:reply, "This channel's calendar uses *America/Chicago*."}
-
-      expect_reply()
-      run("tz Europe/London")
-      assert_received {:reply, "This channel's calendar now uses *Europe/London*."}
-      assert Repo.reload!(channel).time_zone == "Europe/London"
-      assert_enqueued(worker: SyncCanvas, args: %{channel_id: channel.id})
-    end
-
-    test "rejects unknown zones" do
-      channel = enabled_channel!()
-      expect_reply()
-
-      run("tz Mars/Olympus")
-
-      assert_received {:reply, "`Mars/Olympus` isn't a time zone I know." <> _}
-      assert is_nil(Repo.reload!(channel).time_zone)
-    end
-
-    test "needs the calendar on" do
-      expect_reply()
-      run("tz UTC")
-      assert_received {:reply, "The calendar isn't on in this channel." <> _}
     end
   end
 

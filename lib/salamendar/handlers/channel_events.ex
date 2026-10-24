@@ -10,7 +10,6 @@ defmodule Salamendar.Handlers.ChannelEvents do
 
   alias Salamendar.{Accounts, Channels}
   alias Salamendar.Channels.Channel
-  alias Salamendar.Workers.DeleteCanvases
 
   @type bot :: %{team_id: String.t(), user_id: String.t()}
 
@@ -59,12 +58,11 @@ defmodule Salamendar.Handlers.ChannelEvents do
   end
 
   @doc """
-  Turns `channel`'s calendar off and schedules its canvas for deletion.
+  Turns `channel`'s calendar off.
   """
   @spec disable(Channel.t()) :: :ok
   def disable(%Channel{} = channel) do
-    {:ok, channel, _canvases} = Channels.disable_calendar(channel)
-    {:ok, _} = DeleteCanvases.enqueue(channel.id)
+    {:ok, _channel} = Channels.disable_calendar(channel)
     :ok
   end
 
@@ -77,7 +75,7 @@ defmodule Salamendar.Handlers.ChannelEvents do
   end
 
   @doc """
-  `channel_archive`/`group_archive`. Canvas syncs skip archived channels.
+  `channel_archive`/`group_archive`. Archived channels' events are hidden.
   """
   @spec archived(bot(), map()) :: :ok
   def archived(bot, %{"channel" => channel_id}),

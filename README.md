@@ -1,7 +1,17 @@
 # Salamendar
 
-A Slack bot built on [`slack_elixir`](https://github.com/ryanwinchester/slack_elixir),
-connected over Socket Mode (no public URL needed).
+A shared calendar for Slack channels. Turn it on in a channel, add events from
+Slack, and see everyone's events on a web calendar.
+
+- **In Slack:** the `/salamendar` command, event forms, and a Home tab that
+  lists today's events.
+- **On the web:** a month, week and list calendar (Phoenix LiveView and
+  [EventCalendar](https://github.com/vkurko/calendar)), opened from a sign-in
+  link in Slack.
+
+The bot is built on [`slack_elixir`](https://github.com/ryanwinchester/slack_elixir)
+and connects over Socket Mode (no public URL needed). The web calendar runs in
+the same app, on <http://localhost:4000> in development.
 
 It depends on the fork at [`matzko/slack_elixir`](https://github.com/matzko/slack_elixir),
 pinned by commit in `mix.exs`. Upstream only dispatches `events_api` and
@@ -21,7 +31,7 @@ Run `just` to list the dev commands. The main ones:
 | Command | What it does |
 | --- | --- |
 | `just setup` | Starts Postgres, fetches deps, creates and migrates the database |
-| `just run` | Starts Postgres, then `iex -S mix` |
+| `just run` | Starts Postgres, then the bot and the web calendar in `iex -S mix` |
 | `just test` | Starts Postgres, then `mix test` (extra args are passed through) |
 | `just psql` | Opens psql on the dev database |
 | `just down` / `just nuke` | Stops Postgres / stops it and deletes its data |
@@ -61,12 +71,14 @@ just run
 
 Once the log shows `[Slack.Socket] hello`, you're connected. To try it:
 
-- DM the bot: it echoes your message back.
-- Invite it to a channel (`/invite @salamendar`) and mention it: it replies
-  in a thread with a **Ping** button.
-- Run `/salamendar hi` in any channel: you get an ephemeral reply with the button.
-- Click **Ping**: you get an ephemeral confirmation (this is the
-  interactivity path through the fork).
+1. In a channel, run `/salamendar enable`. (In a private channel, invite the
+   bot first with `/invite @salamendar`.)
+2. Add events with `/salamendar new`, or from Salamendar's **Home** tab.
+3. Click **Open calendar** on the Home tab, or run `/salamendar open`, to see
+   the web calendar at <http://localhost:4000>. The link signs you in and works
+   for a day.
+
+Run `/salamendar` on its own for the other commands.
 
 If the token is missing or invalid, the app fails to boot on purpose.
 `Slack.Supervisor` calls `auth.test` at startup and raises unless Slack

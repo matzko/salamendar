@@ -7,7 +7,7 @@ defmodule Salamendar.Bot.EventFormTest do
   alias Salamendar.{Accounts, Bot, Calendar, Channels}
   alias Salamendar.Calendar.Event
   alias Salamendar.SlackAPI.Mock
-  alias Salamendar.Workers.{PublishHome, SyncCanvas}
+  alias Salamendar.Workers.PublishHome
 
   setup :verify_on_exit!
 
@@ -254,7 +254,6 @@ defmodule Salamendar.Bot.EventFormTest do
       assert event.time_zone == "America/Chicago"
       assert is_nil(event.description)
 
-      assert_enqueued(worker: SyncCanvas, args: %{channel_id: general.id})
       assert_enqueued(worker: PublishHome, args: %{team_id: "TEF1", slack_user_id: "U1"})
     end
 
@@ -320,8 +319,6 @@ defmodule Salamendar.Bot.EventFormTest do
                )
 
       assert Repo.reload!(event).title == "Moved"
-      assert_enqueued(worker: SyncCanvas, args: %{channel_id: general.id})
-      assert_enqueued(worker: SyncCanvas, args: %{channel_id: random.id})
     end
 
     test "only the owner can update", %{user: user, general: general} do
@@ -349,7 +346,6 @@ defmodule Salamendar.Bot.EventFormTest do
       assert :ok = submit(%{}, callback_id: "delete_event", private_metadata: event.id)
 
       refute Repo.get(Event, event.id)
-      assert_enqueued(worker: SyncCanvas, args: %{channel_id: general.id})
       assert_enqueued(worker: PublishHome, args: %{slack_user_id: "U1"})
     end
 

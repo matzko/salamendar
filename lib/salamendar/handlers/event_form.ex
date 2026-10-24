@@ -14,7 +14,7 @@ defmodule Salamendar.Handlers.EventForm do
   Slack's own conversation pickers can't be filtered by our data.
 
   Submissions answer Slack within its 3-second limit: they only touch the
-  database and enqueue jobs (canvas syncs and a Home tab refresh), and they
+  database and enqueue a Home tab refresh, and they
   return `{:ack, …}` with errors to show in the form.
   """
 
@@ -22,7 +22,7 @@ defmodule Salamendar.Handlers.EventForm do
   alias Salamendar.Calendar.Event
   alias Salamendar.Channels.Channel
   alias Salamendar.Render.Period
-  alias Salamendar.Workers.{PublishHome, SyncCanvas}
+  alias Salamendar.Workers.PublishHome
 
   @form_callback_id "event_form"
   @delete_callback_id "delete_event"
@@ -108,8 +108,8 @@ defmodule Salamendar.Handlers.EventForm do
       end
 
     case result do
-      {:ok, _event, channel_ids} ->
-        after_change(team_id, slack_user_id, channel_ids)
+      {:ok, _event, _channel_ids} ->
+        after_change(team_id, slack_user_id)
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:ack, %{response_action: "errors", errors: form_errors(changeset)}}
@@ -140,8 +140,8 @@ defmodule Salamendar.Handlers.EventForm do
       end
 
     case result do
-      {:ok, _event, channel_ids} ->
-        after_change(team_id, slack_user_id, channel_ids)
+      {:ok, _event, _channel_ids} ->
+        after_change(team_id, slack_user_id)
 
       {:error, :not_found} ->
         {:ack, update_to_message("This event was already deleted.")}
@@ -151,8 +151,7 @@ defmodule Salamendar.Handlers.EventForm do
     end
   end
 
-  defp after_change(team_id, slack_user_id, channel_ids) do
-    for channel_id <- channel_ids, do: {:ok, _} = SyncCanvas.enqueue(channel_id)
+  defp after_change(team_id, slack_user_id) do
     {:ok, _} = PublishHome.enqueue(team_id, slack_user_id)
     :ok
   end

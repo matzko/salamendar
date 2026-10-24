@@ -12,7 +12,7 @@ defmodule Salamendar.SlackAPI do
     * `{:error, :ratelimited, retry_after_seconds}` when Slack rate limits
       the call (workers return `{:snooze, retry_after_seconds}` to Oban);
     * `{:error, code}` with Slack's `"error"` string, e.g.
-      `"canvas_not_found"`;
+      `"channel_not_found"`;
     * `{:error, exception}` when the request itself failed (e.g. a network
       error).
   """
@@ -29,8 +29,8 @@ defmodule Salamendar.SlackAPI do
   @callback get(method :: String.t(), params()) :: result()
 
   @doc """
-  Calls a write method such as `canvases.edit` with a JSON body, so nested
-  values (`blocks`, `changes`, `document_content`) need no pre-encoding.
+  Calls a write method such as `views.publish` with a JSON body, so nested
+  values (`blocks`, `view`) need no pre-encoding.
   """
   @callback post(method :: String.t(), params()) :: result()
 

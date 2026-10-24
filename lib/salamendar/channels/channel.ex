@@ -7,8 +7,7 @@ defmodule Salamendar.Channels.Channel do
   use Salamendar.Schema
   import Ecto.Changeset
 
-  alias Salamendar.Channels.{Canvas, Membership}
-  alias Salamendar.TimeZones
+  alias Salamendar.Channels.Membership
 
   @type t :: %__MODULE__{}
 
@@ -17,12 +16,10 @@ defmodule Salamendar.Channels.Channel do
     field :slack_channel_id, :string
     field :name, :string
     field :is_private, :boolean, default: false
-    field :time_zone, :string
     field :week_start, :integer, default: 0
     field :calendar_enabled, :boolean, default: false
     field :archived_at, :utc_datetime_usec
 
-    has_many :canvases, Canvas
     has_many :memberships, Membership
 
     timestamps()
@@ -37,14 +34,12 @@ defmodule Salamendar.Channels.Channel do
       :slack_channel_id,
       :name,
       :is_private,
-      :time_zone,
       :week_start,
       :calendar_enabled,
       :archived_at
     ])
     |> validate_required([:slack_team_id, :slack_channel_id])
     |> validate_number(:week_start, greater_than_or_equal_to: 0, less_than_or_equal_to: 6)
-    |> TimeZones.validate(:time_zone)
     |> check_constraint(:week_start, name: :slack_channels_week_start_range)
     |> unique_constraint([:slack_team_id, :slack_channel_id])
   end

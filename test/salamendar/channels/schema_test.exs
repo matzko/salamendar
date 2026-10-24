@@ -2,7 +2,7 @@ defmodule Salamendar.Channels.SchemaTest do
   use Salamendar.DataCase, async: true
 
   alias Salamendar.Accounts
-  alias Salamendar.Channels.{Canvas, Channel, Membership}
+  alias Salamendar.Channels.{Channel, Membership}
 
   defp insert_channel(attrs \\ %{}) do
     %Channel{}
@@ -24,51 +24,9 @@ defmodule Salamendar.Channels.SchemaTest do
       assert %{slack_team_id: ["has already been taken"]} = errors_on(changeset)
     end
 
-    test "validates week_start and time zone" do
-      assert {:error, changeset} = insert_channel(%{week_start: 7, time_zone: "Nowhere"})
-
-      assert %{week_start: [_], time_zone: ["is not a valid time zone"]} =
-               errors_on(changeset)
-    end
-  end
-
-  describe "Canvas" do
-    setup do
-      {:ok, channel} = insert_channel()
-      %{channel: channel}
-    end
-
-    test "allows one canvas of each kind per channel", %{channel: channel} do
-      insert = fn kind ->
-        %Canvas{channel_id: channel.id} |> Canvas.changeset(%{kind: kind}) |> Repo.insert()
-      end
-
-      assert {:ok, _} = insert.(:month)
-      assert {:ok, _} = insert.(:week)
-      assert {:error, changeset} = insert.(:month)
-      assert %{channel_id: ["has already been taken"]} = errors_on(changeset)
-    end
-
-    test "the database rejects unknown kinds", %{channel: channel} do
-      now = DateTime.utc_now()
-
-      row = %{
-        id: Ecto.UUID.dump!(Ecto.UUID.generate()),
-        channel_id: Ecto.UUID.dump!(channel.id),
-        kind: "day",
-        inserted_at: now,
-        updated_at: now
-      }
-
-      assert_raise Postgrex.Error, ~r/channel_canvases_kind/, fn ->
-        Repo.insert_all("channel_canvases", [row])
-      end
-    end
-
-    test "is deleted with its channel", %{channel: channel} do
-      Repo.insert!(%Canvas{channel_id: channel.id, kind: :month})
-      Repo.delete!(channel)
-      assert Repo.aggregate(Canvas, :count) == 0
+    test "validates week_start" do
+      assert {:error, changeset} = insert_channel(%{week_start: 7})
+      assert %{week_start: [_]} = errors_on(changeset)
     end
   end
 

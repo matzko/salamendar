@@ -13,7 +13,7 @@ features:
   slash_commands:
     - command: /salamendar
       description: Shared channel calendar
-      usage_hint: "enable | disable | new | open | tz <zone> | week-start <day>"
+      usage_hint: "enable | disable | new | open | week-start <day>"
       should_escape: false
 oauth_config:
   scopes:
@@ -32,13 +32,8 @@ oauth_config:
       - groups:history
       - im:history
       - mpim:history
-      # Month canvas tab in each calendar channel.
-      - canvases:write
       # conversations.join in `/salamendar enable` (public channels).
       - channels:join
-      # files.info, to download and inspect existing canvases while
-      # working out the month grid's layout.
-      - files:read
 settings:
   event_subscriptions:
     bot_events:

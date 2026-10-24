@@ -38,27 +38,27 @@ defmodule Salamendar.SlackAPI.ClientTest do
     stub(%{ok: true})
 
     assert {:ok, _} =
-             Client.post("canvases.edit", %{canvas_id: "F1", changes: [%{operation: "replace"}]})
+             Client.post("views.publish", %{user_id: "U1", view: %{type: "home", blocks: []}})
 
     assert_received {:request, conn, body}
     assert conn.method == "POST"
     assert Plug.Conn.get_req_header(conn, "content-type") == ["application/json; charset=utf-8"]
 
     assert Jason.decode!(body) == %{
-             "canvas_id" => "F1",
-             "changes" => [%{"operation" => "replace"}]
+             "user_id" => "U1",
+             "view" => %{"type" => "home", "blocks" => []}
            }
   end
 
   test "returns Slack's error code" do
-    stub(%{ok: false, error: "canvas_not_found"})
-    assert {:error, "canvas_not_found"} = Client.post("canvases.edit", %{})
+    stub(%{ok: false, error: "channel_not_found"})
+    assert {:error, "channel_not_found"} = Client.post("conversations.join", %{})
   end
 
   test "returns rate limits with the seconds to wait, without retrying" do
     stub(429, %{ok: false, error: "ratelimited"}, [{"retry-after", "17"}])
 
-    assert {:error, :ratelimited, 17} = Client.post("canvases.edit", %{})
+    assert {:error, :ratelimited, 17} = Client.post("views.publish", %{})
     assert_received {:request, _, _}
     refute_received {:request, _, _}
   end

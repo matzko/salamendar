@@ -5,8 +5,7 @@ defmodule Salamendar.Handlers.Commands do
     * `enable` / `disable`: turn the channel's calendar on or off.
     * `new`: open the form for a new event.
     * `open`: reply with a sign-in link to the web calendar.
-    * `tz [zone]`: show or set the channel's time zone.
-    * `week-start [day]`: show or set the grid's first day of the week.
+    * `week-start [day]`: show or set the calendar's first day of the week.
 
   Replies go to the command's `response_url` (only the user sees them),
   which works even in a private channel the bot hasn't been invited to.
@@ -18,16 +17,15 @@ defmodule Salamendar.Handlers.Commands do
   alias Salamendar.{Accounts, Channels, SlackAPI}
   alias Salamendar.Channels.Channel
   alias Salamendar.Handlers.{ChannelEvents, EventForm}
-  alias Salamendar.Workers.{ReconcileMembers, SyncCanvas}
+  alias Salamendar.Workers.ReconcileMembers
   alias SalamendarWeb.SignInLink
 
   @usage """
-  *Salamendar* keeps a shared calendar in a channel's canvas.
+  *Salamendar* keeps a shared calendar for your channels.
   • `/salamendar enable`: turn on the calendar in this channel
   • `/salamendar disable`: turn it off (events are kept)
   • `/salamendar new`: add an event
   • `/salamendar open`: open the calendar in your browser
-  • `/salamendar tz America/Chicago`: set this channel's time zone
   • `/salamendar week-start monday`: set the calendar's first day of the week
   """
 
@@ -43,7 +41,6 @@ defmodule Salamendar.Handlers.Commands do
       ["disable"] -> disable(team_id, payload)
       ["new"] -> new_event(team_id, payload)
       ["open"] -> open(team_id, payload)
-      ["tz" | args] -> time_zone(team_id, payload, args)
       ["week-start" | args] -> week_start(team_id, payload, args)
       _ -> reply(payload, @usage)
     end
@@ -65,14 +62,12 @@ defmodule Salamendar.Handlers.Commands do
              is_private: info["is_private"] || false
            }),
          {:ok, channel} <- Channels.enable_calendar(channel),
-         {:ok, _} <- ReconcileMembers.enqueue(channel.id),
-         :ok <- ensure_canvas(channel) do
-      {:ok, _} = SyncCanvas.enqueue(channel.id)
-
-      reply(
+         {:ok, _} <- ReconcileMembers.enqueue(channel.id) do
+      link_reply(
+        team_id,
         payload,
-        "The calendar is on! It's in this channel's *Calendar* tab. " <>
-          "Add events with `/salamendar new` or from Salamendar's Home tab."
+        "The calendar is on! Add events with `/salamendar new` or from Salamendar's Home tab, " <>
+          "and see them in your browser:"
       )
     else
       {:error, message} when is_binary(message) ->
@@ -111,39 +106,6 @@ defmodule Salamendar.Handlers.Commands do
     end
   end
 
-  # Creates the canvas tab here, rather than in the sync job, so problems
-  # reach the user. Its content is filled in by `SyncCanvas`.
-  defp ensure_canvas(channel) do
-    {:ok, canvas} = Channels.get_or_create_canvas(channel, :month)
-
-    if canvas.slack_canvas_id do
-      :ok
-    else
-      create_canvas(channel, canvas)
-    end
-  end
-
-  defp create_canvas(channel, canvas) do
-    case SlackAPI.post("canvases.create", %{
-           title: "Calendar",
-           channel_id: channel.slack_channel_id,
-           document_content: %{type: "markdown", markdown: "Loading calendar…"}
-         }) do
-      {:ok, %{"canvas_id" => canvas_id}} ->
-        {:ok, _} = Channels.set_canvas_slack_id(canvas, canvas_id)
-        :ok
-
-      {:error, code}
-      when code in ["free_team_canvas_tab_already_exists", "channel_canvas_already_exists"] ->
-        {:error,
-         "This channel already has a canvas tab, and Slack's free plan allows only one. " <>
-           "Remove the existing canvas tab, then run `/salamendar enable` again."}
-
-      error ->
-        error
-    end
-  end
-
   # -- disable --------------------------------------------------------------------
 
   defp disable(team_id, %{"channel_id" => channel_id} = payload) do
@@ -153,7 +115,7 @@ defmodule Salamendar.Handlers.Commands do
 
         reply(
           payload,
-          "The calendar is off, and its canvas tab will be removed. Its events are kept: `/salamendar enable` brings them back."
+          "The calendar is off. Its events are kept: `/salamendar enable` brings them back."
         )
 
       _ ->
@@ -176,18 +138,22 @@ defmodule Salamendar.Handlers.Commands do
 
   # -- open -----------------------------------------------------------------------
 
-  # The link goes in a button: Slack doesn't unfurl button URLs, so the token
-  # isn't fetched by anyone else.
-  defp open(team_id, %{"user_id" => user_id, "channel_id" => channel_id} = payload) do
+  defp open(team_id, payload),
+    do: link_reply(team_id, payload, "Here's your link to the calendar. It works for a day.")
+
+  # Replies with `text` and a sign-in link for the user who ran the command,
+  # focused on the channel. The link goes in a button: Slack doesn't unfurl
+  # button URLs, so the token isn't fetched by anyone else.
+  defp link_reply(team_id, %{"user_id" => user_id, "channel_id" => channel_id} = payload, text) do
     {:ok, user} = Accounts.get_or_create_user(team_id, user_id)
     url = SignInLink.url(user, focus(channel_id))
 
     respond(payload, %{
-      text: "Here's your link to the calendar.",
+      text: text,
       blocks: [
         %{
           type: "section",
-          text: %{type: "mrkdwn", text: "Here's your link to the calendar. It works for a day."},
+          text: %{type: "mrkdwn", text: text},
           accessory: %{
             type: "button",
             action_id: "open_calendar",
@@ -206,27 +172,6 @@ defmodule Salamendar.Handlers.Commands do
 
   # -- settings -------------------------------------------------------------------
 
-  defp time_zone(team_id, payload, args) do
-    with_enabled_channel(team_id, payload, &set_time_zone(&1, payload, args))
-  end
-
-  defp set_time_zone(channel, payload, []),
-    do: reply(payload, "This channel's calendar uses *#{Channels.time_zone(channel)}*.")
-
-  defp set_time_zone(channel, payload, [zone | _]) do
-    case Channels.update_settings(channel, %{time_zone: zone}) do
-      {:ok, channel} ->
-        {:ok, _} = SyncCanvas.enqueue(channel.id)
-        reply(payload, "This channel's calendar now uses *#{zone}*.")
-
-      {:error, _changeset} ->
-        reply(
-          payload,
-          "`#{zone}` isn't a time zone I know. Use a name like `America/Chicago` or `Europe/London`."
-        )
-    end
-  end
-
   defp week_start(team_id, payload, args) do
     with_enabled_channel(team_id, payload, &set_week_start(&1, payload, args))
   end
@@ -238,8 +183,7 @@ defmodule Salamendar.Handlers.Commands do
   defp set_week_start(channel, payload, [day | _]) do
     case parse_weekday(day) do
       {:ok, week_start} ->
-        {:ok, channel} = Channels.update_settings(channel, %{week_start: week_start})
-        {:ok, _} = SyncCanvas.enqueue(channel.id)
+        {:ok, _channel} = Channels.update_settings(channel, %{week_start: week_start})
         reply(payload, "This channel's calendar now starts weeks on *#{day_name(week_start)}*.")
 
       :error ->

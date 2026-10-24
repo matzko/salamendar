@@ -1,10 +1,10 @@
 defmodule Salamendar.Calendar do
   @moduledoc """
   Calendar events: creating, changing and deleting them, and the queries
-  behind the channel canvases and the Home tab.
+  behind the web calendar and the Home tab.
 
-  Functions that change events return the IDs of the channels whose canvases
-  need re-rendering. Nothing here calls Slack.
+  Functions that change events return the IDs of the channels they affect,
+  so callers can tell open calendars to refresh. Nothing here calls Slack.
   """
 
   import Ecto.Changeset
@@ -131,21 +131,6 @@ defmodule Salamendar.Calendar do
     end
   end
 
-  @doc """
-  Events in `channel` that overlap `range`, taking the days in the channel's
-  time zone. All-day events first, then by start.
-  """
-  @spec list_channel_events(Channel.t(), Date.Range.t()) :: [Event.t()]
-  def list_channel_events(%Channel{} = channel, %Date.Range{first: first, last: last, step: 1}) do
-    from(e in Event,
-      join: c in assoc(e, :channels),
-      where: c.id == ^channel.id,
-      where: ^overlaps(first, Date.add(last, 1), Channels.time_zone(channel)),
-      order_by: ^chronological()
-    )
-    |> Repo.all()
-  end
-
   @typedoc """
   One edge of a range of local days, in both forms: the instant of that
   local midnight (for timed events) and its date (for all-day events, whose
@@ -216,14 +201,6 @@ defmodule Salamendar.Calendar do
       user,
       {Period.start_of_day(date, time_zone), date},
       {Period.start_of_day(next, time_zone), next}
-    )
-  end
-
-  # Events overlapping the local days [first, stop) in `time_zone`.
-  defp overlaps(first, stop, time_zone) do
-    overlaps(
-      {Period.start_of_day(first, time_zone), first},
-      {Period.start_of_day(stop, time_zone), stop}
     )
   end
 

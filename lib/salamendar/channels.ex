@@ -1,16 +1,15 @@
 defmodule Salamendar.Channels do
   @moduledoc """
-  Slack channels, their calendar settings, a local copy of their membership
-  and the canvases that show their calendar.
+  Slack channels, their calendar settings and a local copy of their
+  membership.
 
-  Nothing here calls Slack. Functions that change what Slack should show
-  (e.g. `disable_calendar/1`) return what the caller needs to update it.
+  Nothing here calls Slack.
   """
 
   import Ecto.Query
 
   alias Salamendar.Accounts.User
-  alias Salamendar.Channels.{Canvas, Channel, Membership}
+  alias Salamendar.Channels.{Channel, Membership}
   alias Salamendar.Repo
 
   @doc """
@@ -52,8 +51,8 @@ defmodule Salamendar.Channels do
   end
 
   @doc """
-  Deletes `channel` (e.g. after it's deleted in Slack). Its memberships,
-  canvas rows and `event_channels` rows go with it; its events stay.
+  Deletes `channel` (e.g. after it's deleted in Slack). Its memberships
+  and `event_channels` rows go with it; its events stay.
   """
   @spec delete_channel(Channel.t()) :: :ok
   def delete_channel(%Channel{} = channel) do
@@ -62,12 +61,11 @@ defmodule Salamendar.Channels do
   end
 
   @doc """
-  Updates `channel`'s calendar settings: any of `:time_zone` and
-  `:week_start` in `attrs`.
+  Updates `channel`'s calendar settings: `:week_start` in `attrs`.
   """
   @spec update_settings(Channel.t(), map()) :: {:ok, Channel.t()} | {:error, Ecto.Changeset.t()}
   def update_settings(%Channel{} = channel, attrs) do
-    update_channel(channel, Map.take(attrs, [:time_zone, :week_start]))
+    update_channel(channel, Map.take(attrs, [:week_start]))
   end
 
   @doc """
@@ -81,22 +79,16 @@ defmodule Salamendar.Channels do
   Turns the calendar off for `channel` and deletes its memberships.
 
   Its events and their `event_channels` rows are kept, so enabling it again
-  brings everything back. Returns the channel's canvas rows: the caller
-  deletes those canvases in Slack and then the rows.
+  brings everything back.
   """
-  @spec disable_calendar(Channel.t()) ::
-          {:ok, Channel.t(), [Canvas.t()]} | {:error, Ecto.Changeset.t()}
+  @spec disable_calendar(Channel.t()) :: {:ok, Channel.t()} | {:error, Ecto.Changeset.t()}
   def disable_calendar(%Channel{} = channel) do
     Repo.transact(fn ->
       with {:ok, channel} <- update_channel(channel, %{calendar_enabled: false}) do
         Repo.delete_all(from(m in Membership, where: m.channel_id == ^channel.id))
-        {:ok, {channel, Repo.all(from(c in Canvas, where: c.channel_id == ^channel.id))}}
+        {:ok, channel}
       end
     end)
-    |> case do
-      {:ok, {channel, canvases}} -> {:ok, channel, canvases}
-      error -> error
-    end
   end
 
   @doc """
@@ -120,16 +112,6 @@ defmodule Salamendar.Channels do
   def rename_channel(%Channel{} = channel, name), do: update_channel(channel, %{name: name})
 
   defp update_channel(channel, attrs), do: channel |> Channel.changeset(attrs) |> Repo.update()
-
-  @doc """
-  The time zone `channel`'s calendar is shown in: its own, or the configured
-  default.
-  """
-  @spec time_zone(Channel.t()) :: String.t()
-  def time_zone(%Channel{time_zone: nil}),
-    do: Application.fetch_env!(:salamendar, :default_time_zone)
-
-  def time_zone(%Channel{time_zone: time_zone}), do: time_zone
 
   @doc """
   Records that `user` is a member of `channel`. Idempotent.
@@ -247,71 +229,5 @@ defmodule Salamendar.Channels do
   @spec list_enabled_channels() :: [Channel.t()]
   def list_enabled_channels do
     Repo.all(from(c in Channel, where: c.calendar_enabled and is_nil(c.archived_at)))
-  end
-
-  @doc """
-  Returns `channel`'s canvas row of `kind`, creating it if needed. A new row
-  has no `slack_canvas_id` until the canvas is created in Slack.
-  """
-  @spec get_or_create_canvas(Channel.t(), Canvas.kind()) ::
-          {:ok, Canvas.t()} | {:error, Ecto.Changeset.t()}
-  def get_or_create_canvas(%Channel{} = channel, kind) do
-    with {:ok, _} <-
-           %Canvas{channel_id: channel.id}
-           |> Canvas.changeset(%{kind: kind})
-           |> Repo.insert(on_conflict: :nothing, conflict_target: [:channel_id, :kind]) do
-      {:ok, Repo.get_by!(Canvas, channel_id: channel.id, kind: kind)}
-    end
-  end
-
-  @doc """
-  `channel`'s canvas rows.
-  """
-  @spec list_canvases(Channel.t()) :: [Canvas.t()]
-  def list_canvases(%Channel{} = channel) do
-    Repo.all(from(c in Canvas, where: c.channel_id == ^channel.id))
-  end
-
-  @doc """
-  Records the Slack ID of `canvas` once it's created in Slack, or clears it
-  (`nil`) when Slack says it's gone. Clearing also forgets what was
-  rendered, so a new canvas gets a full render.
-  """
-  @spec set_canvas_slack_id(Canvas.t(), String.t() | nil) ::
-          {:ok, Canvas.t()} | {:error, Ecto.Changeset.t()}
-  def set_canvas_slack_id(%Canvas{} = canvas, slack_canvas_id) do
-    canvas
-    |> Canvas.changeset(%{
-      slack_canvas_id: slack_canvas_id,
-      rendered_period: nil,
-      content_hash: nil,
-      rendered_at: nil
-    })
-    |> Repo.update()
-  end
-
-  @doc """
-  Deletes `canvas`'s row, e.g. once the canvas is deleted in Slack.
-  """
-  @spec delete_canvas(Canvas.t()) :: :ok
-  def delete_canvas(%Canvas{} = canvas) do
-    Repo.delete_all(from(c in Canvas, where: c.id == ^canvas.id))
-    :ok
-  end
-
-  @doc """
-  Records that `canvas` now shows `period` (e.g. `"2026-10-01"`), rendered
-  to content with hash `hash`.
-  """
-  @spec mark_canvas_rendered(Canvas.t(), String.t(), String.t()) ::
-          {:ok, Canvas.t()} | {:error, Ecto.Changeset.t()}
-  def mark_canvas_rendered(%Canvas{} = canvas, period, hash) do
-    canvas
-    |> Canvas.changeset(%{
-      rendered_period: period,
-      content_hash: hash,
-      rendered_at: DateTime.utc_now()
-    })
-    |> Repo.update()
   end
 end

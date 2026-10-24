@@ -32,7 +32,7 @@ defmodule Salamendar.Workers.ReconcileMembersTest do
   test "the cron run enqueues one job per enabled channel" do
     a = enabled_channel!("C1")
     b = enabled_channel!("C2")
-    {:ok, _, _} = Channels.disable_calendar(enabled_channel!("C3"))
+    {:ok, _} = Channels.disable_calendar(enabled_channel!("C3"))
 
     assert :ok = perform_job(ReconcileMembers, %{})
 
@@ -55,7 +55,7 @@ defmodule Salamendar.Workers.ReconcileMembersTest do
   end
 
   test "does nothing for disabled channels" do
-    {:ok, channel, _} = Channels.disable_calendar(enabled_channel!("C1"))
+    {:ok, channel} = Channels.disable_calendar(enabled_channel!("C1"))
     assert :ok = perform_job(ReconcileMembers, %{channel_id: channel.id})
   end
 

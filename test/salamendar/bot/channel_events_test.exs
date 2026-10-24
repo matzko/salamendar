@@ -4,7 +4,6 @@ defmodule Salamendar.Bot.ChannelEventsTest do
 
   alias Salamendar.{Accounts, Bot, Channels}
   alias Salamendar.Channels.Channel
-  alias Salamendar.Workers.DeleteCanvases
 
   @bot %Slack.Bot{
     id: "B1",
@@ -78,13 +77,12 @@ defmodule Salamendar.Bot.ChannelEventsTest do
 
       refute Repo.reload!(channel).calendar_enabled
       refute Channels.member?(channel, user)
-      assert_enqueued(worker: DeleteCanvases, args: %{channel_id: channel.id})
     end
   end
 
   test "channel_left for a channel without the calendar does nothing" do
-    Bot.handle_event("channel_left", %{"channel" => "C-unknown"}, @bot)
-    refute_enqueued(worker: DeleteCanvases)
+    assert :ok = Bot.handle_event("channel_left", %{"channel" => "C-unknown"}, @bot)
+    refute Channels.get_channel("TCE1", "C-unknown")
   end
 
   for prefix <- ["channel", "group"] do

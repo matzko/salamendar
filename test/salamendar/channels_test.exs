@@ -7,7 +7,7 @@ defmodule Salamendar.ChannelsTest do
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.Event
   alias Salamendar.Channels
-  alias Salamendar.Channels.{Canvas, Channel, Membership}
+  alias Salamendar.Channels.{Channel, Membership}
 
   defp channel!(slack_channel_id \\ "C1", attrs \\ %{}) do
     {:ok, channel} = Channels.upsert_channel("TCH1", slack_channel_id, attrs)
@@ -77,7 +77,6 @@ defmodule Salamendar.ChannelsTest do
       user = user!("U1")
       :ok = Channels.add_member(channel, user)
       :ok = Channels.add_member(other, user)
-      {:ok, canvas} = Channels.get_or_create_canvas(channel, :month)
 
       event =
         %Event{slack_team_id: "TCH1", owner_id: user.id}
@@ -90,10 +89,9 @@ defmodule Salamendar.ChannelsTest do
         |> put_assoc(:channels, [channel])
         |> Repo.insert!()
 
-      assert {:ok, channel, [returned]} = Channels.disable_calendar(channel)
+      assert {:ok, channel} = Channels.disable_calendar(channel)
 
       refute channel.calendar_enabled
-      assert returned.id == canvas.id
       refute Channels.member?(channel, user)
       assert Channels.member?(other, user)
       assert Repo.get(Event, event.id)
@@ -103,7 +101,7 @@ defmodule Salamendar.ChannelsTest do
     test "enabling again keeps the channel's settings" do
       channel = enabled_channel!()
       {:ok, channel} = channel |> Channel.changeset(%{week_start: 1}) |> Repo.update()
-      {:ok, channel, []} = Channels.disable_calendar(channel)
+      {:ok, channel} = Channels.disable_calendar(channel)
 
       {:ok, channel} = Channels.enable_calendar(channel)
       assert channel.calendar_enabled
@@ -123,15 +121,6 @@ defmodule Salamendar.ChannelsTest do
 
       {:ok, channel} = Channels.rename_channel(channel, "random")
       assert Repo.reload!(channel).name == "random"
-    end
-  end
-
-  describe "time_zone/1" do
-    test "uses the channel's zone, or the configured default" do
-      assert Channels.time_zone(%Channel{time_zone: "Asia/Kolkata"}) == "Asia/Kolkata"
-
-      assert Channels.time_zone(%Channel{}) ==
-               Application.fetch_env!(:salamendar, :default_time_zone)
     end
   end
 
@@ -215,62 +204,6 @@ defmodule Salamendar.ChannelsTest do
 
       assert [%Channel{id: id}] = Channels.list_enabled_channels()
       assert id == enabled.id
-    end
-  end
-
-  describe "get_or_create_canvas/2 and mark_canvas_rendered/3" do
-    test "returns the same row on repeated calls" do
-      channel = enabled_channel!()
-
-      assert {:ok, %Canvas{kind: :month, slack_canvas_id: nil} = canvas} =
-               Channels.get_or_create_canvas(channel, :month)
-
-      assert {:ok, again} = Channels.get_or_create_canvas(channel, :month)
-      assert again.id == canvas.id
-      assert Repo.aggregate(Canvas, :count) == 1
-    end
-
-    test "keeps existing render state" do
-      channel = enabled_channel!()
-      {:ok, canvas} = Channels.get_or_create_canvas(channel, :month)
-      {:ok, _} = Channels.mark_canvas_rendered(canvas, "2026-10-01", "abc")
-
-      assert {:ok, %Canvas{rendered_period: "2026-10-01"}} =
-               Channels.get_or_create_canvas(channel, :month)
-    end
-
-    test "set_canvas_slack_id/2 sets or clears the ID, resetting the render state" do
-      {:ok, canvas} = Channels.get_or_create_canvas(enabled_channel!(), :month)
-      {:ok, canvas} = Channels.set_canvas_slack_id(canvas, "F1")
-      {:ok, canvas} = Channels.mark_canvas_rendered(canvas, "2026-10-01", "abc")
-
-      assert {:ok, canvas} = Channels.set_canvas_slack_id(canvas, nil)
-      assert %Canvas{slack_canvas_id: nil, rendered_period: nil, content_hash: nil} = canvas
-      assert is_nil(canvas.rendered_at)
-    end
-
-    test "list_canvases/1 and delete_canvas/1" do
-      channel = enabled_channel!()
-      other = enabled_channel!("C2")
-      {:ok, canvas} = Channels.get_or_create_canvas(channel, :month)
-      {:ok, _} = Channels.get_or_create_canvas(other, :month)
-
-      assert [%Canvas{id: id}] = Channels.list_canvases(channel)
-      assert id == canvas.id
-
-      assert :ok = Channels.delete_canvas(canvas)
-      assert :ok = Channels.delete_canvas(canvas)
-      assert Channels.list_canvases(channel) == []
-      assert [_] = Channels.list_canvases(other)
-    end
-
-    test "mark_canvas_rendered/3 records the period, hash and time" do
-      {:ok, canvas} = Channels.get_or_create_canvas(enabled_channel!(), :month)
-
-      assert {:ok, canvas} = Channels.mark_canvas_rendered(canvas, "2026-10-01", "abc")
-      assert canvas.rendered_period == "2026-10-01"
-      assert canvas.content_hash == "abc"
-      assert %DateTime{} = canvas.rendered_at
     end
   end
 end

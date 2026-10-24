@@ -19,10 +19,6 @@ defmodule Salamendar.CalendarTest do
       })
 
     {:ok, channel} = Channels.enable_calendar(channel)
-
-    {:ok, channel} =
-      channel |> Channels.Channel.changeset(%{time_zone: opts[:time_zone]}) |> Repo.update()
-
     for member <- Keyword.get(opts, :members, []), do: :ok = Channels.add_member(channel, member)
     channel
   end
@@ -47,8 +43,6 @@ defmodule Salamendar.CalendarTest do
   end
 
   defp titles(events), do: Enum.map(events, & &1.title)
-
-  defp day(date), do: Date.range(date, date)
 
   describe "create_event/3" do
     test "creates the event in its channels and returns them as affected" do
@@ -93,7 +87,7 @@ defmodule Salamendar.CalendarTest do
       owner = user!("U1")
       attrs = timed(~U[2026-10-10 14:00:00Z], ~U[2026-10-10 15:00:00Z])
 
-      {:ok, disabled, _} = Channels.disable_calendar(channel!("C1"))
+      {:ok, disabled} = Channels.disable_calendar(channel!("C1"))
       {:ok, archived} = Channels.archive_channel(channel!("C2"))
       elsewhere = channel!("C3", team_id: "TCA2")
 
@@ -124,7 +118,7 @@ defmodule Salamendar.CalendarTest do
     test "checks the stored channel, not the struct passed in" do
       owner = user!("U1")
       channel = channel!("C1")
-      {:ok, _, _} = Channels.disable_calendar(channel)
+      {:ok, _} = Channels.disable_calendar(channel)
 
       assert {:error, _} =
                Calendar.create_event(
@@ -174,7 +168,7 @@ defmodule Salamendar.CalendarTest do
 
     test "a channel the event already has can stay after it's disabled",
          %{owner: owner, a: a, event: event} do
-      {:ok, _, _} = Channels.disable_calendar(a)
+      {:ok, _} = Channels.disable_calendar(a)
 
       assert {:ok, _, [a_id]} = Calendar.update_event(owner, event, %{title: "Kept"}, [a])
       assert a_id == a.id
@@ -210,64 +204,6 @@ defmodule Salamendar.CalendarTest do
       assert a_id == a.id
       refute Repo.get(Event, event.id)
       assert {:error, :not_found} = Calendar.delete_event(owner, event)
-    end
-  end
-
-  describe "list_channel_events/2" do
-    setup do
-      %{owner: user!("U1"), channel: channel!("C1", time_zone: "Etc/UTC")}
-    end
-
-    test "excludes timed events that only touch the window's edges",
-         %{owner: owner, channel: channel} do
-      event!(owner, timed(~U[2026-10-09 23:00:00Z], ~U[2026-10-10 00:00:00Z], "Ends at start"), [
-        channel
-      ])
-
-      event!(owner, timed(~U[2026-10-11 00:00:00Z], ~U[2026-10-11 01:00:00Z], "Starts at end"), [
-        channel
-      ])
-
-      event!(owner, timed(~U[2026-10-09 23:59:00Z], ~U[2026-10-10 00:01:00Z], "Crosses start"), [
-        channel
-      ])
-
-      event!(owner, timed(~U[2026-10-10 23:59:00Z], ~U[2026-10-11 00:01:00Z], "Crosses end"), [
-        channel
-      ])
-
-      assert titles(Calendar.list_channel_events(channel, day(~D[2026-10-10]))) ==
-               ["Crosses start", "Crosses end"]
-    end
-
-    test "excludes all-day events that only touch the window's edges",
-         %{owner: owner, channel: channel} do
-      event!(owner, all_day(~D[2026-10-09], ~D[2026-10-10], "Day before"), [channel])
-      event!(owner, all_day(~D[2026-10-11], ~D[2026-10-12], "Day after"), [channel])
-      event!(owner, all_day(~D[2026-10-08], ~D[2026-10-13], "Spans it"), [channel])
-
-      assert titles(Calendar.list_channel_events(channel, day(~D[2026-10-10]))) == ["Spans it"]
-    end
-
-    test "takes days in the channel's time zone", %{owner: owner} do
-      tokyo = channel!("C2", time_zone: "Asia/Tokyo")
-      # 08:30 on Oct 11 in Tokyo.
-      event!(owner, timed(~U[2026-10-10 23:30:00Z], ~U[2026-10-11 00:00:00Z]), [tokyo])
-
-      assert Calendar.list_channel_events(tokyo, day(~D[2026-10-10])) == []
-      assert [_] = Calendar.list_channel_events(tokyo, day(~D[2026-10-11]))
-    end
-
-    test "covers a multi-day range and only this channel", %{owner: owner, channel: channel} do
-      other = channel!("C2")
-      event!(owner, timed(~U[2026-10-01 09:00:00Z], ~U[2026-10-01 10:00:00Z], "First"), [channel])
-      event!(owner, timed(~U[2026-10-31 09:00:00Z], ~U[2026-10-31 10:00:00Z], "Last"), [channel])
-      event!(owner, timed(~U[2026-11-01 09:00:00Z], ~U[2026-11-01 10:00:00Z], "Next"), [channel])
-      event!(owner, timed(~U[2026-10-15 09:00:00Z], ~U[2026-10-15 10:00:00Z], "Other"), [other])
-
-      assert titles(
-               Calendar.list_channel_events(channel, Date.range(~D[2026-10-01], ~D[2026-10-31]))
-             ) == ["First", "Last"]
     end
   end
 
@@ -317,7 +253,7 @@ defmodule Salamendar.CalendarTest do
 
       disabled = channel!("C1", members: [user])
       event!(owner, attrs.("Disabled"), [disabled])
-      {:ok, _, _} = Channels.disable_calendar(disabled)
+      {:ok, _} = Channels.disable_calendar(disabled)
 
       archived = channel!("C2", members: [user])
       event!(owner, attrs.("Archived"), [archived])
