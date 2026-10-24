@@ -68,6 +68,21 @@ defmodule Salamendar.Calendar.EventTest do
     end
   end
 
+  describe "reschedule_changeset/2" do
+    test "casts only the times" do
+      changeset =
+        Event.reschedule_changeset(%Event{all_day: false}, %{
+          starts_at: ~U[2026-10-10 14:00:00Z],
+          ends_at: ~U[2026-10-10 15:00:00Z],
+          title: "Ignored",
+          all_day: true
+        })
+
+      assert changeset.valid?
+      assert Map.keys(changeset.changes) |> Enum.sort() == [:ends_at, :starts_at]
+    end
+  end
+
   describe "events_time_shape constraint" do
     test "rejects a mixed row that skips the changeset" do
       row = %{

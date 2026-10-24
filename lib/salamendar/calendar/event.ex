@@ -57,8 +57,24 @@ defmodule Salamendar.Calendar.Event do
     |> TimeZones.validate(:time_zone)
     |> validate_time_shape()
     |> assoc_constraint(:owner)
-    |> check_constraint(:starts_at, name: :events_time_shape, message: "is invalid")
+    |> check_time_shape()
   end
+
+  @doc """
+  Casts only the times: `starts_at`/`ends_at` for a timed event, or
+  `start_date`/`end_date` for an all-day one. `all_day` isn't cast, so the
+  other pair is an error rather than a switch between all-day and timed.
+  """
+  @spec reschedule_changeset(t(), map()) :: Ecto.Changeset.t()
+  def reschedule_changeset(event, attrs) do
+    event
+    |> cast(attrs, [:starts_at, :ends_at, :start_date, :end_date])
+    |> validate_time_shape()
+    |> check_time_shape()
+  end
+
+  defp check_time_shape(changeset),
+    do: check_constraint(changeset, :starts_at, name: :events_time_shape, message: "is invalid")
 
   # Mirrors the `events_time_shape` CHECK constraint with readable errors.
   defp validate_time_shape(changeset) do

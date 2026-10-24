@@ -66,6 +66,25 @@ defmodule Salamendar.Calendar do
   end
 
   @doc """
+  Moves or resizes `event` as `user`, who must be its owner. Only the times
+  change (see `Event.reschedule_changeset/2`): the event stays all-day or
+  timed, and keeps its channels and time zone. The affected channels are
+  the event's.
+  """
+  @spec reschedule_event(User.t(), Event.t(), map()) ::
+          {:ok, Event.t(), affected_channel_ids()}
+          | {:error, :forbidden | :not_found | Ecto.Changeset.t()}
+  def reschedule_event(%User{} = user, %Event{} = event, attrs) do
+    Repo.transact(fn ->
+      with {:ok, event} <- lock_owned_event(user, event),
+           {:ok, event} <- event |> Event.reschedule_changeset(attrs) |> Repo.update() do
+        {:ok, {event, channel_ids(event)}}
+      end
+    end)
+    |> unwrap()
+  end
+
+  @doc """
   Deletes `event` as `user`, who must be its owner.
   """
   @spec delete_event(User.t(), Event.t()) ::

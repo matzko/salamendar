@@ -193,6 +193,122 @@ defmodule Salamendar.CalendarTest do
     end
   end
 
+  describe "reschedule_event/3" do
+    setup do
+      owner = user!("U1")
+      a = channel!("C1")
+      b = channel!("C2")
+      event = event!(owner, timed(~U[2026-10-10 14:00:00Z], ~U[2026-10-10 15:00:00Z]), [a, b])
+      %{owner: owner, a: a, b: b, event: event}
+    end
+
+    test "moves a timed event by instants, keeping its channels",
+         %{owner: owner, a: a, b: b, event: event} do
+      assert {:ok, moved, affected} =
+               Calendar.reschedule_event(owner, event, %{
+                 starts_at: ~U[2026-10-12 16:00:00Z],
+                 ends_at: ~U[2026-10-12 18:00:00Z]
+               })
+
+      assert moved.starts_at == ~U[2026-10-12 16:00:00.000000Z]
+      assert moved.ends_at == ~U[2026-10-12 18:00:00.000000Z]
+      refute moved.all_day
+      assert Enum.sort(affected) == Enum.sort([a.id, b.id])
+      assert Repo.aggregate("event_channels", :count) == 2
+    end
+
+    test "moves an all-day event by dates", %{owner: owner, a: a} do
+      event = event!(owner, all_day(~D[2026-10-10], ~D[2026-10-11]), [a])
+
+      assert {:ok, moved, [a_id]} =
+               Calendar.reschedule_event(owner, event, %{
+                 start_date: ~D[2026-10-12],
+                 end_date: ~D[2026-10-15]
+               })
+
+      assert {moved.start_date, moved.end_date} == {~D[2026-10-12], ~D[2026-10-15]}
+      assert moved.all_day
+      assert a_id == a.id
+    end
+
+    test "changes only the times", %{owner: owner, event: event} do
+      assert {:ok, moved, _} =
+               Calendar.reschedule_event(owner, event, %{
+                 starts_at: ~U[2026-10-12 16:00:00Z],
+                 ends_at: ~U[2026-10-12 18:00:00Z],
+                 title: "Renamed",
+                 time_zone: "America/Chicago",
+                 all_day: true
+               })
+
+      assert {moved.title, moved.time_zone, moved.all_day} == {"Timed", "Etc/UTC", false}
+    end
+
+    test "can't switch a timed event to all-day", %{owner: owner, event: event} do
+      assert {:error, changeset} =
+               Calendar.reschedule_event(owner, event, %{
+                 start_date: ~D[2026-10-12],
+                 end_date: ~D[2026-10-13]
+               })
+
+      assert %{start_date: ["must be blank for timed events"]} = errors_on(changeset)
+    end
+
+    test "can't switch an all-day event to timed", %{owner: owner, a: a} do
+      event = event!(owner, all_day(~D[2026-10-10], ~D[2026-10-11]), [a])
+
+      assert {:error, changeset} =
+               Calendar.reschedule_event(owner, event, %{
+                 starts_at: ~U[2026-10-12 16:00:00Z],
+                 ends_at: ~U[2026-10-12 18:00:00Z]
+               })
+
+      assert %{starts_at: ["must be blank for all-day events"]} = errors_on(changeset)
+    end
+
+    test "rejects an end at or before the start", %{owner: owner, event: event} do
+      assert {:error, changeset} =
+               Calendar.reschedule_event(owner, event, %{
+                 starts_at: ~U[2026-10-12 16:00:00Z],
+                 ends_at: ~U[2026-10-12 16:00:00Z]
+               })
+
+      assert %{ends_at: ["must be after the start"]} = errors_on(changeset)
+    end
+
+    test "stores the instants it's given across the DST change", %{owner: owner, a: a} do
+      # 9:00 CDT on Sat Oct 31, dragged to 9:00 CST on Sun Nov 1: 25 hours
+      # later, though the browser's `delta` says 24.
+      event = event!(owner, timed(~U[2026-10-31 14:00:00Z], ~U[2026-10-31 15:00:00Z]), [a])
+
+      assert {:ok, moved, _} =
+               Calendar.reschedule_event(owner, event, %{
+                 starts_at: ~U[2026-11-01 15:00:00Z],
+                 ends_at: ~U[2026-11-01 16:00:00Z]
+               })
+
+      assert DateTime.shift_zone!(moved.starts_at, "America/Chicago").hour == 9
+    end
+
+    test "only the owner can reschedule", %{a: a, event: event} do
+      other = user!("U2")
+      :ok = Channels.add_member(a, other)
+
+      assert {:error, :forbidden} =
+               Calendar.reschedule_event(other, event, %{
+                 starts_at: ~U[2026-10-12 16:00:00Z],
+                 ends_at: ~U[2026-10-12 18:00:00Z]
+               })
+
+      assert Repo.reload!(event).starts_at == ~U[2026-10-10 14:00:00.000000Z]
+    end
+
+    test "returns :not_found for a deleted event", %{owner: owner, event: event} do
+      Repo.delete!(event)
+      assert {:error, :not_found} = Calendar.reschedule_event(owner, event, %{})
+    end
+  end
+
   describe "delete_event/2" do
     test "the owner can delete, returning the event's channels" do
       owner = user!("U1")
