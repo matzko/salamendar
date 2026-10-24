@@ -377,6 +377,201 @@ defmodule SalamendarWeb.CalendarLiveTest do
     end
   end
 
+  describe "adding and editing in the panel" do
+    defp chicago(conn),
+      do: conn |> put_connect_params(%{"timeZone" => "America/Chicago"}) |> live(~p"/")
+
+    test "Add event creates a timed event in the browser's zone", %{
+      conn: conn,
+      viewer: viewer,
+      team: team
+    } do
+      {:ok, view, _html} = chicago(conn)
+
+      view |> element("button.add-event") |> render_click()
+      assert has_element?(view, "#event-panel-title", "Add event")
+      assert has_element?(view, "#event-form input[type=datetime-local]")
+
+      view
+      |> form("#event-form",
+        event: %{
+          title: "Review",
+          starts_at: "2026-10-14T13:00",
+          ends_at: "2026-10-14T14:00",
+          channel_ids: [team.id]
+        }
+      )
+      |> render_submit()
+
+      assert [event] = Repo.all(Event)
+      assert event.owner_id == viewer.id
+      assert event.starts_at == ~U[2026-10-14 18:00:00.000000Z]
+      assert event.time_zone == "America/Chicago"
+      assert is_nil(event.description)
+
+      # The panel shows what was saved, and everyone's calendars refetch.
+      assert has_element?(view, "#event-panel-title", "Review")
+      refute has_element?(view, "#event-form")
+      assert_push_event(view, "refetch", %{})
+      assert_enqueued(worker: PublishHome, args: %{slack_user_id: "U1"})
+    end
+
+    test "selecting days in the month grid starts an all-day event", %{conn: conn, team: team} do
+      {:ok, view, _html} = chicago(conn)
+
+      render_hook(view, "new", %{
+        "all_day" => true,
+        "start" => "2026-10-12T05:00:00.000Z",
+        "end" => "2026-10-15T05:00:00.000Z",
+        "start_date" => "2026-10-12",
+        "end_date" => "2026-10-15"
+      })
+
+      assert has_element?(view, "#event_start_date[value='2026-10-12']")
+      assert has_element?(view, "#event_end_date[value='2026-10-14']")
+
+      view
+      |> form("#event-form", event: %{title: "Offsite", channel_ids: [team.id]})
+      |> render_submit()
+
+      assert [%Event{all_day: true, start_date: ~D[2026-10-12], end_date: ~D[2026-10-15]}] =
+               Repo.all(Event)
+    end
+
+    test "the All day checkbox swaps the inputs, keeping both kinds of times", %{conn: conn} do
+      {:ok, view, _html} = chicago(conn)
+      view |> element("button.add-event") |> render_click()
+
+      view |> form("#event-form", event: %{all_day: "true"}) |> render_change()
+      assert has_element?(view, "#event-form input[type=date]")
+      refute has_element?(view, "#event-form input[type=datetime-local]")
+      assert has_element?(view, "#event-form input[type=hidden][name='event[starts_at]']")
+
+      view |> form("#event-form", event: %{all_day: "false"}) |> render_change()
+      assert has_element?(view, "#event-form input[type=datetime-local]")
+    end
+
+    test "shows errors on their fields and saves nothing", %{conn: conn, team: team} do
+      {:ok, view, _html} = chicago(conn)
+      view |> element("button.add-event") |> render_click()
+
+      # Nothing checked: the checkgroup's hidden "" is all that's sent, as
+      # from a browser.
+      view
+      |> form("#event-form",
+        event: %{title: "Nowhere", starts_at: "2026-10-14T13:00", ends_at: "2026-10-14T14:00"}
+      )
+      |> render_submit()
+
+      assert has_element?(
+               view,
+               "#event_channel_ids .field-error",
+               "must include at least one channel"
+             )
+
+      html =
+        view
+        |> form("#event-form",
+          event: %{
+            title: "Backwards",
+            starts_at: "2026-10-14T14:00",
+            ends_at: "2026-10-14T13:00",
+            channel_ids: [team.id]
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "must be after the start"
+      assert has_element?(view, "#event_ends_at.field-input-error")
+
+      assert Repo.aggregate(Event, :count) == 0
+      refute_enqueued(worker: PublishHome)
+    end
+
+    test "the owner edits from the details view, keeping the event's zone", %{
+      conn: conn,
+      viewer: viewer,
+      team: team,
+      eng: eng
+    } do
+      {:ok, event, _} =
+        Calendar.create_event(
+          viewer,
+          %{
+            title: "Standup",
+            time_zone: "Europe/Paris",
+            starts_at: ~U[2026-10-14 14:00:00Z],
+            ends_at: ~U[2026-10-14 14:15:00Z]
+          },
+          [team]
+        )
+
+      {:ok, view, _html} = chicago(conn)
+      render_hook(view, "open", %{"id" => event.id})
+      view |> element("#event-panel button", "Edit") |> render_click()
+
+      assert has_element?(view, "#event-panel-title", "Edit event")
+      assert has_element?(view, "#event_title[value='Standup']")
+      assert has_element?(view, "#event_starts_at[value='2026-10-14T09:00']")
+
+      view
+      |> form("#event-form",
+        event: %{title: "Sync", ends_at: "2026-10-14T09:30", channel_ids: [team.id, eng.id]}
+      )
+      |> render_submit()
+
+      event = Repo.reload!(event) |> Repo.preload(:channels)
+      assert event.title == "Sync"
+      assert event.ends_at == ~U[2026-10-14 14:30:00.000000Z]
+      assert event.time_zone == "Europe/Paris"
+      assert Enum.sort(Enum.map(event.channels, & &1.id)) == Enum.sort([team.id, eng.id])
+      assert has_element?(view, "#event-panel-title", "Sync")
+    end
+
+    test "Cancel goes back to the details, or closes a new event", %{
+      conn: conn,
+      viewer: viewer,
+      team: team
+    } do
+      event = event!(viewer, "Offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      render_hook(view, "open", %{"id" => event.id})
+      view |> element("#event-panel button", "Edit") |> render_click()
+      view |> element("#event-panel button", "Cancel") |> render_click()
+      assert has_element?(view, "#event-panel-title", "Offsite")
+      refute has_element?(view, "#event-form")
+
+      view |> element("button.add-event") |> render_click()
+      view |> element("#event-panel button", "Cancel") |> render_click()
+      refute has_element?(view, "#event-panel")
+    end
+
+    test "someone else's event can't be edited", %{conn: conn, owner: owner, team: team} do
+      event = event!(owner, "Team offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      render_hook(view, "open", %{"id" => event.id})
+      refute has_element?(view, "#event-panel button", "Edit")
+
+      render_hook(view, "edit", %{})
+      refute has_element?(view, "#event-form")
+    end
+
+    test "saving an event deleted meanwhile says so", %{conn: conn, viewer: viewer, team: team} do
+      event = event!(viewer, "Offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      render_hook(view, "open", %{"id" => event.id})
+      view |> element("#event-panel button", "Edit") |> render_click()
+      {:ok, _, _} = Calendar.delete_event(viewer, event)
+
+      html = view |> form("#event-form", event: %{title: "Too late"}) |> render_submit()
+      assert html =~ "This event was deleted."
+      refute has_element?(view, "#event-panel")
+    end
+  end
+
   describe "time zone" do
     test "uses the browser's zone", %{conn: conn} do
       {:ok, view, _html} =

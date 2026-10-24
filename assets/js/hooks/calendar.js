@@ -68,6 +68,12 @@ export const Calendar = {
               .catch(() => []),
         },
       ],
+      // Selecting a range opens the panel for a new event there.
+      selectable: true,
+      select: (info) => {
+        this.pushEvent("new", {...range(info), all_day: info.allDay})
+        this.ec.unselect()
+      },
       eventClick: ({event}) => this.pushEvent("open", {id: event.id}),
       eventDrop: (info) => this.reschedule(info),
       eventResize: (info) => this.reschedule(info),

@@ -193,6 +193,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+.event-panel-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.add-event {
+  margin-bottom: 1rem;
+}
+
 /* Phones: the sidebar is a drawer behind a button, and the toolbar is
    smaller. */
 @media (max-width: 640px) {

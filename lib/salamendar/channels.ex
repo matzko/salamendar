@@ -224,6 +224,16 @@ defmodule Salamendar.Channels do
   end
 
   @doc """
+  The channels to offer when `user` picks an event's channels: `current`
+  (the event's own, which may since have been disabled, or which the user
+  may have left) and then `list_member_channels/1`, without duplicates.
+  """
+  @spec list_picker_channels(User.t(), [Channel.t()]) :: [Channel.t()]
+  def list_picker_channels(%User{} = user, current \\ []) do
+    Enum.uniq_by(current ++ list_member_channels(user), & &1.id)
+  end
+
+  @doc """
   Channels with the calendar enabled, excluding archived ones.
   """
   @spec list_enabled_channels() :: [Channel.t()]

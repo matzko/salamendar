@@ -19,15 +19,19 @@ defmodule SalamendarWeb.CalendarLive do
   browser sends something unknown.
 
   Clicking an event opens the event panel (`:event`), which shows its
-  details to anyone who can see it.
+  details to anyone who can see it. Its owner can switch it to the form
+  (`:form`, editing `:editing`), which is also how events are added: from
+  the sidebar's button or by selecting a range on the calendar. The form's
+  params are described in `SalamendarWeb.EventParams`.
   """
   use SalamendarWeb, :live_view
 
   alias Salamendar.{Accounts, Calendar, Channels, Colors, TimeZones}
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.{Changes, Event}
+  alias Salamendar.Channels.Channel
   alias Salamendar.Workers.PublishHome
-  alias SalamendarWeb.EventTimes
+  alias SalamendarWeb.{EventParams, EventTimes}
 
   # The longest range a fetch may ask for. A month grid shows six weeks.
   @max_fetch_days 62
@@ -48,6 +52,9 @@ defmodule SalamendarWeb.CalendarLive do
        own_color: Colors.for_user(user),
        time_zone: browser_time_zone(socket, user),
        event: nil,
+       form: nil,
+       editing: nil,
+       channel_options: [],
        week_start: common_week_start(channels)
      )}
   end
@@ -120,7 +127,73 @@ defmodule SalamendarWeb.CalendarLive do
     end
   end
 
-  def handle_event("close", _params, socket), do: {:noreply, assign(socket, event: nil)}
+  def handle_event("close", _params, socket), do: {:noreply, close_panel(socket)}
+
+  # The sidebar's "Add event" button.
+  def handle_event("add", _params, socket) do
+    {:noreply, open_form(socket, :new, EventParams.new(socket.assigns.time_zone))}
+  end
+
+  # A range selected on the calendar.
+  def handle_event("new", params, socket) do
+    {:noreply,
+     open_form(socket, :new, EventParams.from_selection(params, socket.assigns.time_zone))}
+  end
+
+  def handle_event("edit", _params, socket) do
+    %{event: event, current_user: user, time_zone: time_zone} = socket.assigns
+
+    if event && event.owner_id == user.id,
+      do: {:noreply, open_form(socket, event, EventParams.from_event(event, time_zone))},
+      else: {:noreply, socket}
+  end
+
+  # Back to the details of the event being edited, or closed for a new one.
+  def handle_event("cancel", _params, socket) do
+    case socket.assigns.editing do
+      %Event{} -> {:noreply, assign(socket, form: nil, editing: nil)}
+      _ -> {:noreply, close_panel(socket)}
+    end
+  end
+
+  def handle_event("validate", %{"event" => params}, socket) when is_map(params) do
+    {:noreply, assign(socket, form: event_form(params, preview_errors(socket, params)))}
+  end
+
+  def handle_event("save", %{"event" => params}, socket) when is_map(params) do
+    %{current_user: user, editing: editing, time_zone: time_zone} = socket.assigns
+    {attrs, channel_ids} = EventParams.to_attrs(params, time_zone)
+    channels = Enum.map(channel_ids, &%Channel{id: &1})
+
+    result =
+      case editing do
+        %Event{} = event -> Calendar.update_event(user, event, attrs, channels)
+        _new -> Calendar.create_event(user, Map.put(attrs, :time_zone, time_zone), channels)
+      end
+
+    case result do
+      {:ok, event, affected} ->
+        :ok = Changes.broadcast(affected, event.owner_id)
+        {:ok, _} = PublishHome.enqueue(user.slack_team_id, user.slack_user_id)
+
+        {:noreply,
+         assign(socket,
+           form: nil,
+           editing: nil,
+           event: Calendar.get_visible_event(user, event.id)
+         )}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, form: event_form(params, EventParams.errors(changeset)))}
+
+      {:error, :forbidden} ->
+        {:noreply,
+         socket |> close_panel() |> put_flash(:error, "Only the event's owner can change it.")}
+
+      {:error, :not_found} ->
+        {:noreply, socket |> close_panel() |> put_flash(:error, "This event was deleted.")}
+    end
+  end
 
   def handle_event("toggle_channel", %{"id" => id}, socket) do
     if MapSet.member?(socket.assigns.channel_ids, id) do
@@ -141,15 +214,54 @@ defmodule SalamendarWeb.CalendarLive do
     {:noreply, socket |> assign(own: not socket.assigns.own) |> push_event("refetch", %{})}
   end
 
-  # The open event may have changed too: reload it, closing the panel if
-  # it's gone or no longer visible.
+  # The event in the details view may have changed too: reload it, closing
+  # the panel if it's gone or no longer visible. An open form is left
+  # alone; saving it reports a deleted event.
   @impl true
   def handle_info(:calendar_changed, socket) do
-    event =
-      if open = socket.assigns.event,
-        do: Calendar.get_visible_event(socket.assigns.current_user, open.id)
+    socket =
+      case socket.assigns do
+        %{form: nil, event: %Event{id: id}, current_user: user} ->
+          assign(socket, event: Calendar.get_visible_event(user, id))
 
-    {:noreply, socket |> assign(event: event) |> push_event("refetch", %{})}
+        _ ->
+          socket
+      end
+
+    {:noreply, push_event(socket, "refetch", %{})}
+  end
+
+  defp close_panel(socket), do: assign(socket, event: nil, form: nil, editing: nil)
+
+  defp open_form(socket, editing, params) do
+    current = if match?(%Event{}, editing), do: editing.channels, else: []
+
+    options =
+      for channel <- Channels.list_picker_channels(socket.assigns.current_user, current),
+          do: {"#" <> (channel.name || channel.slack_channel_id), channel.id}
+
+    assign(socket,
+      editing: editing,
+      form: event_form(params, []),
+      channel_options: options
+    )
+  end
+
+  defp event_form(params, errors), do: to_form(params, as: :event, errors: errors)
+
+  # The changeset's errors for `params` without saving, so fields can show
+  # them as they're filled in. Channels are only checked on save.
+  defp preview_errors(socket, params) do
+    %{current_user: user, editing: editing, time_zone: time_zone} = socket.assigns
+    {attrs, _channel_ids} = EventParams.to_attrs(params, time_zone)
+
+    base =
+      case editing do
+        %Event{} = event -> event
+        _new -> %Event{slack_team_id: user.slack_team_id, time_zone: time_zone}
+      end
+
+    base |> Event.changeset(attrs) |> EventParams.errors()
   end
 
   # Dates for an all-day event, instants for a timed one, according to the
@@ -232,6 +344,15 @@ defmodule SalamendarWeb.CalendarLive do
         </button>
 
         <aside id="sidebar" class="sidebar">
+          <.button
+            type="button"
+            variant="primary"
+            class="add-event"
+            phx-click={JS.push("add") |> JS.remove_class("open", to: "#sidebar")}
+          >
+            Add event
+          </.button>
+
           <div class="sidebar-header">
             <h2>Calendars</h2>
             <button
@@ -271,8 +392,15 @@ defmodule SalamendarWeb.CalendarLive do
           </footer>
         </aside>
 
+        <.form_panel
+          :if={@form}
+          form={@form}
+          new?={not match?(%Event{}, @editing)}
+          channel_options={@channel_options}
+        />
+
         <.event_panel
-          :if={@event}
+          :if={@event && !@form}
           event={@event}
           viewer={@current_user}
           channel_ids={@channel_ids}
@@ -340,6 +468,71 @@ defmodule SalamendarWeb.CalendarLive do
       </dl>
 
       <p :if={@event.description} class="event-description">{@event.description}</p>
+
+      <div :if={@own?} class="event-panel-actions">
+        <.button type="button" phx-click="edit">Edit</.button>
+      </div>
+    </aside>
+    """
+  end
+
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :new?, :boolean, required: true
+  attr :channel_options, :list, required: true
+
+  defp form_panel(assigns) do
+    assigns = assign(assigns, all_day?: EventParams.all_day?(assigns.form.params))
+
+    ~H"""
+    <aside
+      id="event-panel"
+      class="event-panel"
+      role="dialog"
+      aria-labelledby="event-panel-title"
+      phx-window-keydown="close"
+      phx-key="Escape"
+    >
+      <header class="event-panel-header">
+        <h2 id="event-panel-title">{if @new?, do: "Add event", else: "Edit event"}</h2>
+        <button type="button" class="event-panel-close" phx-click="close" aria-label="Close">
+          ×
+        </button>
+      </header>
+
+      <.form for={@form} id="event-form" phx-change="validate" phx-submit="save">
+        <.input field={@form[:title]} label="Title" maxlength="255" />
+        <.input field={@form[:all_day]} type="checkbox" label="All day" />
+
+        <%= if @all_day? do %>
+          <.input field={@form[:start_date]} type="date" label="Starts" />
+          <.input field={@form[:end_date]} type="date" label="Ends" />
+          <.input field={@form[:starts_at]} type="hidden" />
+          <.input field={@form[:ends_at]} type="hidden" />
+        <% else %>
+          <.input field={@form[:starts_at]} type="datetime-local" label="Starts" />
+          <.input field={@form[:ends_at]} type="datetime-local" label="Ends" />
+          <.input field={@form[:start_date]} type="hidden" />
+          <.input field={@form[:end_date]} type="hidden" />
+        <% end %>
+
+        <.input
+          field={@form[:channel_ids]}
+          type="checkgroup"
+          label="Channels"
+          options={@channel_options}
+        />
+        <p :if={@channel_options == []} class="muted">
+          You aren't in any channels with the calendar on yet. Run <code>/salamendar enable</code>
+          in a channel to start one.
+        </p>
+
+        <.input field={@form[:description]} type="textarea" label="Description" />
+
+        <div class="event-panel-actions">
+          <.button type="submit" variant="primary" phx-disable-with="Saving…">Save</.button>
+          <.button type="button" phx-click="cancel">Cancel</.button>
+        </div>
+      </.form>
     </aside>
     """
   end

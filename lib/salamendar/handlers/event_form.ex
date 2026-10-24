@@ -298,13 +298,10 @@ defmodule Salamendar.Handlers.EventForm do
     end)
   end
 
-  # The user's calendar channels, plus the event's own (which may since have
-  # been disabled, or which the owner may have left), up to Slack's limit.
+  # Up to Slack's limit on options.
   defp picker_channels(user, event) do
-    current = if event, do: event.channels, else: []
-
-    (current ++ Channels.list_member_channels(user))
-    |> Enum.uniq_by(& &1.id)
+    user
+    |> Channels.list_picker_channels(if(event, do: event.channels, else: []))
     |> Enum.take(@max_channel_options)
   end
 

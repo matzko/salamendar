@@ -196,6 +196,26 @@ defmodule Salamendar.ChannelsTest do
     end
   end
 
+  describe "list_picker_channels/2" do
+    test "puts the current channels first, then the user's calendar channels, once each" do
+      user = user!("U1")
+      general = enabled_channel!("C1")
+      random = enabled_channel!("C2")
+      {:ok, old} = Channels.disable_calendar(enabled_channel!("C3"))
+      :ok = Channels.add_member(general, user)
+      :ok = Channels.add_member(random, user)
+
+      ids = fn channels -> Enum.map(channels, & &1.id) end
+
+      assert Enum.sort(ids.(Channels.list_picker_channels(user))) ==
+               Enum.sort([general.id, random.id])
+
+      assert [first | rest] = Channels.list_picker_channels(user, [old, random])
+      assert first.id == old.id
+      assert Enum.sort(ids.(rest)) == Enum.sort([general.id, random.id])
+    end
+  end
+
   describe "list_enabled_channels/0" do
     test "excludes disabled and archived channels" do
       enabled = enabled_channel!("C1")
