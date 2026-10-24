@@ -16,7 +16,8 @@ defmodule SalamendarWeb.CalendarLive do
   use SalamendarWeb, :live_view
 
   alias Salamendar.{Calendar, Channels, Colors}
-  alias Salamendar.Calendar.Changes
+  alias Salamendar.Calendar.{Changes, Event}
+  alias Salamendar.Workers.PublishHome
 
   # The longest range a fetch may ask for. A month grid shows six weeks.
   @max_fetch_days 62
@@ -78,6 +79,28 @@ defmodule SalamendarWeb.CalendarLive do
     {:reply, %{events: events}, socket}
   end
 
+  # A drag or resize. Only the times change; the hook reverts the move
+  # unless the reply is `ok: true`.
+  def handle_event("reschedule", %{"id" => id} = params, socket) do
+    user = socket.assigns.current_user
+
+    result =
+      with %Event{} = event <- Calendar.get_event(id) || {:error, :not_found},
+           {:ok, attrs} <- reschedule_attrs(event, params) do
+        Calendar.reschedule_event(user, event, attrs)
+      end
+
+    case result do
+      {:ok, event, channel_ids} ->
+        :ok = Changes.broadcast(channel_ids, event.owner_id)
+        {:ok, _} = PublishHome.enqueue(user.slack_team_id, user.slack_user_id)
+        {:reply, %{ok: true}, socket}
+
+      {:error, reason} ->
+        {:reply, %{ok: false}, put_flash(socket, :error, reschedule_error(reason))}
+    end
+  end
+
   def handle_event("toggle_channel", %{"id" => id}, socket) do
     if MapSet.member?(socket.assigns.channel_ids, id) do
       checked = socket.assigns.checked
@@ -99,6 +122,34 @@ defmodule SalamendarWeb.CalendarLive do
 
   @impl true
   def handle_info(:calendar_changed, socket), do: {:noreply, push_event(socket, "refetch", %{})}
+
+  # Dates for an all-day event, instants for a timed one, according to the
+  # stored event: a drag never switches between them.
+  defp reschedule_attrs(%Event{all_day: true}, %{"start" => start, "end" => stop})
+       when is_binary(start) and is_binary(stop) do
+    with {:ok, start_date} <- Date.from_iso8601(start),
+         {:ok, end_date} <- Date.from_iso8601(stop) do
+      {:ok, %{start_date: start_date, end_date: end_date}}
+    else
+      _ -> {:error, :invalid}
+    end
+  end
+
+  defp reschedule_attrs(%Event{}, %{"start" => start, "end" => stop})
+       when is_binary(start) and is_binary(stop) do
+    with {:ok, starts_at, _} <- DateTime.from_iso8601(start),
+         {:ok, ends_at, _} <- DateTime.from_iso8601(stop) do
+      {:ok, %{starts_at: starts_at, ends_at: ends_at}}
+    else
+      _ -> {:error, :invalid}
+    end
+  end
+
+  defp reschedule_attrs(_event, _params), do: {:error, :invalid}
+
+  defp reschedule_error(:forbidden), do: "Only the owner can move this event."
+  defp reschedule_error(:not_found), do: "This event was deleted."
+  defp reschedule_error(_reason), do: "Couldn't move this event."
 
   # The hook sends each edge of the range twice: as an instant (the local
   # midnight, for timed events) and as a local date (for all-day events).

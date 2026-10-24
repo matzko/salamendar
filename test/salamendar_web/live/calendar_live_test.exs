@@ -1,10 +1,12 @@
 defmodule SalamendarWeb.CalendarLiveTest do
   use SalamendarWeb.ConnCase, async: true
+  use Oban.Testing, repo: Salamendar.Repo
 
   import Phoenix.LiveViewTest
 
   alias Salamendar.{Accounts, Calendar, Channels, Repo}
-  alias Salamendar.Calendar.Changes
+  alias Salamendar.Calendar.{Changes, Event}
+  alias Salamendar.Workers.PublishHome
 
   # The week of Oct 11, 2026 as a browser in Chicago asks for it.
   @week %{
@@ -187,6 +189,104 @@ defmodule SalamendarWeb.CalendarLiveTest do
     # HTML, so the LiveView has handled it by the time `render/1` returns.
     render(view)
     refute_push_event(view, "refetch", %{})
+  end
+
+  describe "reschedule" do
+    defp reschedule(view, params) do
+      render_hook(view, "reschedule", params)
+      assert_reply(view, reply)
+      reply
+    end
+
+    test "moves the owner's timed event and tells everyone", %{
+      conn: conn,
+      viewer: viewer,
+      team: team
+    } do
+      {:ok, event, _} =
+        Calendar.create_event(
+          viewer,
+          %{
+            title: "Standup",
+            time_zone: "America/Chicago",
+            starts_at: ~U[2026-10-14 14:00:00Z],
+            ends_at: ~U[2026-10-14 14:15:00Z]
+          },
+          [team]
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      assert %{ok: true} =
+               reschedule(view, %{
+                 "id" => event.id,
+                 "start" => "2026-10-15T15:00:00.000Z",
+                 "end" => "2026-10-15T15:30:00.000Z"
+               })
+
+      assert %Event{
+               starts_at: ~U[2026-10-15 15:00:00.000000Z],
+               ends_at: ~U[2026-10-15 15:30:00.000000Z]
+             } =
+               Repo.reload!(event)
+
+      # The broadcast reaches this LiveView too.
+      assert_push_event(view, "refetch", %{})
+      assert_enqueued(worker: PublishHome, args: %{team_id: "TCL1", slack_user_id: "U1"})
+    end
+
+    test "moves an all-day event by dates", %{conn: conn, viewer: viewer, team: team} do
+      event = event!(viewer, "Offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      assert %{ok: true} =
+               reschedule(view, %{
+                 "id" => event.id,
+                 "start" => "2026-10-14",
+                 "end" => "2026-10-16"
+               })
+
+      assert %Event{start_date: ~D[2026-10-14], end_date: ~D[2026-10-16]} = Repo.reload!(event)
+    end
+
+    test "refuses someone else's event", %{conn: conn, owner: owner, team: team} do
+      event = event!(owner, "Team offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      assert %{ok: false} =
+               reschedule(view, %{
+                 "id" => event.id,
+                 "start" => "2026-10-14",
+                 "end" => "2026-10-15"
+               })
+
+      assert Repo.reload!(event).start_date == ~D[2026-10-12]
+      assert render(view) =~ "Only the owner can move this event."
+      refute_enqueued(worker: PublishHome)
+    end
+
+    test "refuses unknown events and bad times", %{conn: conn, viewer: viewer, team: team} do
+      event = event!(viewer, "Offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      assert %{ok: false} =
+               reschedule(view, %{"id" => "nope", "start" => "2026-10-14", "end" => "2026-10-15"})
+
+      assert render(view) =~ "This event was deleted."
+
+      # Instants for an all-day event, garbage, a backwards range, missing keys.
+      for params <- [
+            %{"start" => "2026-10-14T15:00:00Z", "end" => "2026-10-14T16:00:00Z"},
+            %{"start" => "soon", "end" => "later"},
+            %{"start" => "2026-10-14", "end" => "2026-10-14"},
+            %{}
+          ] do
+        assert %{ok: false} = reschedule(view, Map.put(params, "id", event.id))
+      end
+
+      assert render(view) =~ "Couldn&#39;t move this event."
+      assert Repo.reload!(event).start_date == ~D[2026-10-12]
+    end
   end
 
   test "sends visitors without a session to the expired page" do

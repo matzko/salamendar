@@ -21,6 +21,18 @@ defmodule Salamendar.Calendar do
   @type affected_channel_ids :: [Ecto.UUID.t()]
 
   @doc """
+  The event with `id`, or `nil` if there's none or `id` isn't a UUID. It
+  doesn't check who may see it.
+  """
+  @spec get_event(term()) :: Event.t() | nil
+  def get_event(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> Repo.get(Event, id)
+      :error -> nil
+    end
+  end
+
+  @doc """
   Creates an event owned by `owner` in `channels`.
 
   Every channel must be in the owner's workspace, have the calendar enabled

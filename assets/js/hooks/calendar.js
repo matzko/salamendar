@@ -26,6 +26,14 @@ const range = ({start, end}) => ({
   end_date: localDate(end),
 })
 
+// An event's new times for `reschedule`: local dates for all-day events,
+// UTC instants for timed ones. Never `delta`, which is in wall-clock terms
+// and is an hour off across a DST change.
+const eventTimes = ({allDay, start, end}) =>
+  allDay
+    ? {start: localDate(start), end: localDate(end)}
+    : {start: start.toISOString(), end: end.toISOString()}
+
 const tooltip = ({title, extendedProps: {owner, channels}}) =>
   [title, owner && `by ${owner}`, channels?.length && channels.map((c) => `#${c}`).join(" ")]
     .filter(Boolean)
@@ -60,9 +68,8 @@ export const Calendar = {
               .catch(() => []),
         },
       ],
-      // Editing isn't built yet: put dragged and resized events back.
-      eventDrop: (info) => info.revert(),
-      eventResize: (info) => info.revert(),
+      eventDrop: (info) => this.reschedule(info),
+      eventResize: (info) => this.reschedule(info),
       eventDidMount: ({el, event}) => {
         el.title = tooltip(event)
       },
@@ -77,6 +84,14 @@ export const Calendar = {
       clearTimeout(this.refetchTimer)
       this.refetchTimer = setTimeout(() => this.ec.refetchEvents(), REFETCH_DEBOUNCE_MS)
     })
+  },
+
+  // The server checks the owner again; anything but `ok: true` puts the
+  // event back where it was.
+  reschedule({event, revert}) {
+    this.pushEvent("reschedule", {id: event.id, ...eventTimes(event)})
+      .then((reply) => reply.ok || revert())
+      .catch(() => revert())
   },
 
   destroyed() {

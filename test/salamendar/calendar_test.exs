@@ -44,6 +44,20 @@ defmodule Salamendar.CalendarTest do
 
   defp titles(events), do: Enum.map(events, & &1.title)
 
+  describe "get_event/1" do
+    test "finds an event by ID, and returns nil for unknown or malformed IDs" do
+      event =
+        event!(user!("U1"), timed(~U[2026-10-10 14:00:00Z], ~U[2026-10-10 15:00:00Z]), [
+          channel!("C1")
+        ])
+
+      assert Calendar.get_event(event.id).id == event.id
+      assert is_nil(Calendar.get_event(Ecto.UUID.generate()))
+      assert is_nil(Calendar.get_event("nope"))
+      assert is_nil(Calendar.get_event(nil))
+    end
+  end
+
   describe "create_event/3" do
     test "creates the event in its channels and returns them as affected" do
       owner = user!("U1")
