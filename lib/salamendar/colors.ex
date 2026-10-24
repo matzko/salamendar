@@ -6,12 +6,14 @@ defmodule Salamendar.Colors do
   retuned in one place. Each has a text color that's readable on it (at
   least 4.5:1, WCAG AA) and an emoji for the Slack Home tab.
 
-  The `users_color` CHECK constraint lists the keys too. Adding a color
-  means a migration that replaces it; a test checks they match.
+  The `users_color` and `labels_color` CHECK constraints list the keys too.
+  Adding a color means a migration that replaces them; a test checks they
+  match.
   """
 
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.Event
+  alias Salamendar.Labels.Label
 
   @type color :: %{
           key: String.t(),
@@ -73,10 +75,13 @@ defmodule Salamendar.Colors do
   def for_user(%User{} = user), do: derived(user)
 
   @doc """
-  The color `event` is shown in: its owner's color, or the default. The
-  owner must be preloaded. (Labels, when they exist, will come first.)
+  The color `event` is shown in: its label's color, else its owner's, else
+  the default. The label and owner must be preloaded.
   """
   @spec for_event(Event.t()) :: color()
+  def for_event(%Event{label: %Label{color: key}} = event),
+    do: get(key) || for_event(%{event | label: nil})
+
   def for_event(%Event{owner: %User{} = owner}), do: for_user(owner)
   def for_event(%Event{}), do: default()
 

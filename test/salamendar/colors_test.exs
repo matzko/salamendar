@@ -4,6 +4,7 @@ defmodule Salamendar.ColorsTest do
   alias Salamendar.{Accounts, Colors}
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.Event
+  alias Salamendar.Labels.Label
 
   test "every color has a background, a text color and an emoji" do
     for color <- Colors.all() do
@@ -16,14 +17,17 @@ defmodule Salamendar.ColorsTest do
     assert Colors.get("chartreuse") == nil
   end
 
-  test "the users_color CHECK lists exactly Colors.keys/0" do
-    %{rows: [[definition]]} =
-      Repo.query!(
-        "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'users_color'"
-      )
+  for constraint <- ~w(users_color labels_color) do
+    test "the #{constraint} CHECK lists exactly Colors.keys/0" do
+      %{rows: [[definition]]} =
+        Repo.query!(
+          "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = $1",
+          [unquote(constraint)]
+        )
 
-    keys = for [_, key] <- Regex.scan(~r/'([^']+)'/, definition), do: key
-    assert Enum.sort(keys) == Enum.sort(Colors.keys())
+      keys = for [_, key] <- Regex.scan(~r/'([^']+)'/, definition), do: key
+      assert Enum.sort(keys) == Enum.sort(Colors.keys())
+    end
   end
 
   test "an unknown color is rejected by the changeset and by the CHECK" do
@@ -52,9 +56,28 @@ defmodule Salamendar.ColorsTest do
   end
 
   describe "for_event/1" do
-    test "uses the owner's color" do
-      assert Colors.for_event(%Event{owner: %User{id: Ecto.UUID.generate(), color: "green"}}).key ==
-               "green"
+    test "uses the label's color before the owner's" do
+      event = %Event{
+        label: %Label{color: "red"},
+        owner: %User{id: Ecto.UUID.generate(), color: "green"}
+      }
+
+      assert Colors.for_event(event).key == "red"
+    end
+
+    test "uses the owner's color when the label's is unknown" do
+      event = %Event{
+        label: %Label{color: "x"},
+        owner: %User{id: Ecto.UUID.generate(), color: "green"}
+      }
+
+      assert Colors.for_event(event).key == "green"
+    end
+
+    test "uses the owner's color without a label" do
+      owner = %User{id: Ecto.UUID.generate(), color: "green"}
+      assert Colors.for_event(%Event{label: nil, owner: owner}).key == "green"
+      assert Colors.for_event(%Event{owner: owner}).key == "green"
     end
 
     test "falls back to the default without an owner" do

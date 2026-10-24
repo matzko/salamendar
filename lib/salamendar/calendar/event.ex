@@ -12,6 +12,7 @@ defmodule Salamendar.Calendar.Event do
 
   alias Salamendar.Accounts.User
   alias Salamendar.Channels.Channel
+  alias Salamendar.Labels.Label
   alias Salamendar.TimeZones
 
   @type t :: %__MODULE__{}
@@ -29,6 +30,7 @@ defmodule Salamendar.Calendar.Event do
     field :start_date, :date
     field :end_date, :date
     field :time_zone, :string
+    belongs_to :label, Label
 
     many_to_many :channels, Channel, join_through: "event_channels", on_replace: :delete
 
@@ -50,13 +52,15 @@ defmodule Salamendar.Calendar.Event do
       :ends_at,
       :start_date,
       :end_date,
-      :time_zone
+      :time_zone,
+      :label_id
     ])
     |> validate_required([:slack_team_id, :title, :time_zone])
     |> validate_length(:title, max: @title_max_length)
     |> TimeZones.validate(:time_zone)
     |> validate_time_shape()
     |> assoc_constraint(:owner)
+    |> foreign_key_constraint(:label_id)
     |> check_time_shape()
   end
 
