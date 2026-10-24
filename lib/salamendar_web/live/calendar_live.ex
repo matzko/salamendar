@@ -6,7 +6,9 @@ defmodule SalamendarWeb.CalendarLive do
   EventCalendar asks for events with a `fetch` event whenever it shows a new
   range, so events aren't kept in assigns. The LiveView holds which
   channels are checked in the sidebar, and pushes `refetch` when that
-  changes.
+  changes, or when `Salamendar.Calendar.Changes` says events changed.
+  Subscriptions are made once, at mount, so a channel enabled or joined
+  later needs a reload (as the sidebar does).
 
   `?channel=<Slack channel ID>` (from `/salamendar open`) starts with only
   that channel checked.
@@ -14,6 +16,7 @@ defmodule SalamendarWeb.CalendarLive do
   use SalamendarWeb, :live_view
 
   alias Salamendar.{Calendar, Channels, Colors}
+  alias Salamendar.Calendar.Changes
 
   # The longest range a fetch may ask for. A month grid shows six weeks.
   @max_fetch_days 62
@@ -22,6 +25,7 @@ defmodule SalamendarWeb.CalendarLive do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
     channels = Channels.list_member_channels(user)
+    if connected?(socket), do: :ok = Changes.subscribe(user)
 
     {:ok,
      assign(socket,
@@ -92,6 +96,9 @@ defmodule SalamendarWeb.CalendarLive do
   def handle_event("toggle_own", _params, socket) do
     {:noreply, socket |> assign(own: not socket.assigns.own) |> push_event("refetch", %{})}
   end
+
+  @impl true
+  def handle_info(:calendar_changed, socket), do: {:noreply, push_event(socket, "refetch", %{})}
 
   # The hook sends each edge of the range twice: as an instant (the local
   # midnight, for timed events) and as a local date (for all-day events).

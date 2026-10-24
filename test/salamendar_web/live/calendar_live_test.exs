@@ -4,6 +4,7 @@ defmodule SalamendarWeb.CalendarLiveTest do
   import Phoenix.LiveViewTest
 
   alias Salamendar.{Accounts, Calendar, Channels, Repo}
+  alias Salamendar.Calendar.Changes
 
   # The week of Oct 11, 2026 as a browser in Chicago asks for it.
   @week %{
@@ -155,6 +156,36 @@ defmodule SalamendarWeb.CalendarLiveTest do
     {:ok, view, _html} = live(conn, ~p"/")
 
     render_hook(view, "toggle_channel", %{"id" => private.id})
+    refute_push_event(view, "refetch", %{})
+  end
+
+  test "a change in one of the viewer's channels asks for a refetch", %{conn: conn, team: team} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    Task.await(Task.async(fn -> Changes.broadcast([team.id], nil) end))
+    assert_push_event(view, "refetch", %{})
+  end
+
+  test "a change to the viewer's own event elsewhere asks for a refetch", %{
+    conn: conn,
+    viewer: viewer,
+    owner: owner
+  } do
+    elsewhere = channel!("C6", [owner])
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    Task.await(Task.async(fn -> Changes.broadcast([elsewhere.id], viewer.id) end))
+    assert_push_event(view, "refetch", %{})
+  end
+
+  test "changes elsewhere don't ask for a refetch", %{conn: conn, owner: owner} do
+    elsewhere = channel!("C6", [owner])
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    Task.await(Task.async(fn -> Changes.broadcast([elsewhere.id], owner.id) end))
+    # The broadcast was sent before `render/1` asks the LiveView for its
+    # HTML, so the LiveView has handled it by the time `render/1` returns.
+    render(view)
     refute_push_event(view, "refetch", %{})
   end
 
