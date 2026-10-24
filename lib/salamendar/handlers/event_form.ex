@@ -13,12 +13,18 @@ defmodule Salamendar.Handlers.EventForm do
   user belongs to (plus, when editing, the event's current channels), since
   Slack's own conversation pickers can't be filtered by our data.
 
+  The label picker is a `static_select` grouped into "None", "Shared" and
+  "Mine", each label shown with its color's emoji. Slack can't clear a
+  `static_select` once something's chosen, so "None" is a real option.
+  It's left out when the user has no labels at all, and a submission
+  without it leaves the event's label alone.
+
   Submissions answer Slack within its 3-second limit: they only touch the
   database, tell open web calendars to refetch and enqueue a Home tab
   refresh, and they return `{:ack, …}` with errors to show in the form.
   """
 
-  alias Salamendar.{Accounts, Calendar, Channels, Repo, SlackAPI}
+  alias Salamendar.{Accounts, Calendar, Channels, Colors, Labels, Repo, SlackAPI}
   alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.Channels.Channel
   alias Salamendar.Render.Period
@@ -27,6 +33,8 @@ defmodule Salamendar.Handlers.EventForm do
   @form_callback_id "event_form"
   @delete_callback_id "delete_event"
   @max_channel_options 100
+  @max_group_options 100
+  @no_label "none"
 
   # Where each changeset field's errors are shown in the form.
   @error_blocks %{
@@ -38,7 +46,8 @@ defmodule Salamendar.Handlers.EventForm do
     ends_at: "end",
     end_date: "end",
     all_day: "all_day",
-    channels: "channels"
+    channels: "channels",
+    label_id: "label"
   }
 
   @doc """
@@ -194,37 +203,78 @@ defmodule Salamendar.Handlers.EventForm do
         title: plain(if event, do: "Edit event", else: "Add event"),
         submit: plain("Save"),
         close: plain("Cancel"),
-        blocks: [
-          input("title", "Title", %{
-            type: "plain_text_input",
-            action_id: "value",
-            max_length: 255,
-            initial_value: event && event.title
-          }),
-          input("start", "Starts", datetimepicker(starts_at)),
-          input("end", "Ends", datetimepicker(ends_at)),
-          input(
-            "all_day",
-            "All day",
-            all_day_checkbox(event),
-            optional: true,
-            hint: "Uses the start and end dates (inclusive); their times are ignored."
-          ),
-          input("channels", "Channels", channel_picker(channels, event)),
-          input(
-            "description",
-            "Description",
-            %{
+        blocks:
+          [
+            input("title", "Title", %{
               type: "plain_text_input",
               action_id: "value",
-              multiline: true,
-              initial_value: event && event.description
-            },
-            optional: true
-          )
-        ]
+              max_length: 255,
+              initial_value: event && event.title
+            }),
+            input("start", "Starts", datetimepicker(starts_at)),
+            input("end", "Ends", datetimepicker(ends_at)),
+            input(
+              "all_day",
+              "All day",
+              all_day_checkbox(event),
+              optional: true,
+              hint: "Uses the start and end dates (inclusive); their times are ignored."
+            ),
+            input("channels", "Channels", channel_picker(channels, event)),
+            label_block(Labels.list_labels(user), event),
+            input(
+              "description",
+              "Description",
+              %{
+                type: "plain_text_input",
+                action_id: "value",
+                multiline: true,
+                initial_value: event && event.description
+              },
+              optional: true
+            )
+          ]
+          |> Enum.reject(&is_nil/1)
       }
     end
+  end
+
+  defp label_block(%{shared: [], mine: []}, _event), do: nil
+
+  defp label_block(labels, event) do
+    none = %{text: plain("None"), value: @no_label}
+
+    groups =
+      for {group, labels} <- [{"Shared", labels.shared}, {"Mine", labels.mine}],
+          labels != [],
+          do: %{
+            label: plain(group),
+            options: labels |> Enum.take(@max_group_options) |> Enum.map(&label_option/1)
+          }
+
+    groups = [%{label: plain("None"), options: [none]} | groups]
+    label_id = event && event.label_id
+
+    initial =
+      Enum.find_value(groups, none, fn group ->
+        Enum.find(group.options, &(&1.value == label_id))
+      end)
+
+    input(
+      "label",
+      "Label",
+      %{
+        type: "static_select",
+        action_id: "value",
+        option_groups: groups,
+        initial_option: initial
+      },
+      optional: true
+    )
+  end
+
+  defp label_option(label) do
+    %{text: plain("#{Colors.get(label.color).emoji} #{label.name}"), value: label.id}
   end
 
   defp delete_view(event) do
@@ -347,12 +397,26 @@ defmodule Salamendar.Handlers.EventForm do
         %{all_day: false, starts_at: starts_at, ends_at: ends_at, start_date: nil, end_date: nil}
       end
 
-    Map.merge(times, %{
+    times
+    |> Map.merge(%{
       title: get_in(values, ["title", "value", "value"]),
       description: blank_to_nil(get_in(values, ["description", "value", "value"])),
       time_zone: time_zone
     })
+    |> put_label_id(values)
   end
+
+  # Only when the form had the label block, so a form without it (the user
+  # had no labels) leaves the event's label alone.
+  defp put_label_id(attrs, %{"label" => %{"value" => picker}}) do
+    case picker["selected_option"] do
+      %{"value" => @no_label} -> Map.put(attrs, :label_id, nil)
+      %{"value" => id} -> Map.put(attrs, :label_id, id)
+      _ -> Map.put(attrs, :label_id, nil)
+    end
+  end
+
+  defp put_label_id(attrs, _values), do: attrs
 
   defp selected_datetime(values, block_id) do
     case get_in(values, [block_id, "value", "selected_date_time"]) do

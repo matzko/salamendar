@@ -4,7 +4,7 @@ defmodule Salamendar.Bot.EventFormTest do
 
   import Mox
 
-  alias Salamendar.{Accounts, Bot, Calendar, Channels}
+  alias Salamendar.{Accounts, Bot, Calendar, Channels, Labels}
   alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.SlackAPI.Mock
   alias Salamendar.Workers.PublishHome
@@ -134,6 +134,29 @@ defmodule Salamendar.Bot.EventFormTest do
         "value" => %{"type" => "plain_text_input", "value" => attrs[:description]}
       }
     }
+    |> put_label_value(attrs)
+  end
+
+  # The label block's state, only when `:label` is given (it's absent from
+  # the form when the user has no labels). `nil` is nothing selected.
+  defp put_label_value(values, attrs) do
+    case Keyword.fetch(attrs, :label) do
+      {:ok, value} ->
+        Map.put(values, "label", %{
+          "value" => %{
+            "type" => "static_select",
+            "selected_option" => value && %{"value" => value}
+          }
+        })
+
+      :error ->
+        values
+    end
+  end
+
+  defp label!(user, scope, name, color \\ "red") do
+    {:ok, label} = Labels.create_label(user, %{name: name, color: color}, scope)
+    label
   end
 
   describe "opening the form" do
@@ -348,6 +371,134 @@ defmodule Salamendar.Bot.EventFormTest do
                  private_metadata: event.id,
                  user_id: "U2"
                )
+    end
+  end
+
+  describe "labels" do
+    defp texts(options), do: Enum.map(options, & &1.text.text)
+
+    test "the form offers None, shared labels and the user's own", %{user: user} do
+      {:ok, other} = Accounts.get_or_create_user("TEF1", "U2")
+      label!(other, :shared, "Holiday", "green")
+      label!(user, :personal, "On call")
+      label!(other, :personal, "Theirs")
+      expect_view()
+
+      block_action(%{"action_id" => "add_event", "type" => "button"})
+
+      assert_received {:view, view}
+
+      assert Enum.map(view.blocks, & &1.block_id) ==
+               ~w(title start end all_day channels label description)
+
+      label = block(view, "label")
+      assert label.optional
+      assert label.element.type == "static_select"
+
+      assert [none, shared, mine] = label.element.option_groups
+      assert {none.label.text, texts(none.options)} == {"None", ["None"]}
+      assert {shared.label.text, texts(shared.options)} == {"Shared", ["🟢 Holiday"]}
+      assert {mine.label.text, texts(mine.options)} == {"Mine", ["🔴 On call"]}
+
+      assert label.element.initial_option == %{
+               text: %{type: "plain_text", text: "None"},
+               value: "none"
+             }
+    end
+
+    test "leaves out empty groups", %{user: user} do
+      label!(user, :personal, "On call")
+      expect_view()
+
+      block_action(%{"action_id" => "add_event", "type" => "button"})
+
+      assert_received {:view, view}
+
+      assert ["None", "Mine"] =
+               Enum.map(block(view, "label").element.option_groups, & &1.label.text)
+    end
+
+    test "leaves out the block when the user has no labels" do
+      expect_view()
+
+      block_action(%{"action_id" => "add_event", "type" => "button"})
+
+      assert_received {:view, view}
+      refute block(view, "label")
+    end
+
+    test "Edit selects the event's label", %{user: user, general: general} do
+      label = label!(user, :personal, "On call")
+      event = event!(user, [general], %{label_id: label.id})
+      expect_view()
+
+      block_action(menu("edit:#{event.id}"))
+
+      assert_received {:view, view}
+
+      assert %{value: label_id, text: %{text: "🔴 On call"}} =
+               block(view, "label").element.initial_option
+
+      assert label_id == label.id
+    end
+
+    test "submitting a label saves it, and None clears it", %{user: user, general: general} do
+      label = label!(user, :personal, "On call")
+
+      values = [
+        start: ~U[2026-10-14 18:00:00Z],
+        end: ~U[2026-10-14 19:00:00Z],
+        channel_ids: [general.id]
+      ]
+
+      assert :ok = submit(form_values([title: "Review", label: label.id] ++ values))
+      assert [event] = Repo.all(Event)
+      assert event.label_id == label.id
+
+      assert :ok =
+               submit(form_values([title: "Review", label: "none"] ++ values),
+                 private_metadata: event.id
+               )
+
+      assert Repo.reload!(event).label_id == nil
+    end
+
+    test "a form without the block leaves the label alone", %{user: user, general: general} do
+      label = label!(user, :personal, "On call")
+      event = event!(user, [general], %{label_id: label.id})
+
+      assert :ok =
+               submit(
+                 form_values(
+                   title: "Renamed",
+                   start: ~U[2026-10-12 14:00:00Z],
+                   end: ~U[2026-10-12 14:15:00Z],
+                   channel_ids: [general.id]
+                 ),
+                 private_metadata: event.id
+               )
+
+      assert %Event{title: "Renamed", label_id: label_id} = Repo.reload!(event)
+      assert label_id == label.id
+    end
+
+    test "someone else's personal label is an error on the label block", %{general: general} do
+      {:ok, other} = Accounts.get_or_create_user("TEF1", "U2")
+      theirs = label!(other, :personal, "Theirs")
+
+      assert {:ack,
+              %{response_action: "errors", errors: %{"label" => "Is not a label you can use."}}} =
+               submit(
+                 form_values(
+                   title: "Review",
+                   start: ~U[2026-10-14 18:00:00Z],
+                   end: ~U[2026-10-14 19:00:00Z],
+                   channel_ids: [general.id],
+                   label: theirs.id
+                 )
+               )
+
+      assert Repo.all(Event) == []
     end
   end
 
