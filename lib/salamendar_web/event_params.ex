@@ -28,7 +28,8 @@ defmodule SalamendarWeb.EventParams do
     start_date: :start_date,
     end_date: :end_date,
     time_zone: :starts_at,
-    channels: :channel_ids
+    channels: :channel_ids,
+    label_id: :label_id
   }
 
   @doc """
@@ -87,7 +88,8 @@ defmodule SalamendarWeb.EventParams do
     Map.merge(times, %{
       "title" => event.title,
       "description" => event.description || "",
-      "channel_ids" => Enum.map(event.channels, & &1.id)
+      "channel_ids" => Enum.map(event.channels, & &1.id),
+      "label_id" => event.label_id || ""
     })
   end
 
@@ -100,7 +102,8 @@ defmodule SalamendarWeb.EventParams do
   @doc """
   `Calendar` attrs and the chosen channel IDs from submitted `params`.
   `datetime-local` values are read in `time_zone`. Values that can't be
-  read become `nil`, so the changeset says they're missing.
+  read become `nil`, so the changeset says they're missing. A blank or
+  malformed `label_id` means no label.
   """
   @spec to_attrs(map(), String.t()) :: {map(), [Ecto.UUID.t()]}
   def to_attrs(params, time_zone) do
@@ -128,7 +131,8 @@ defmodule SalamendarWeb.EventParams do
     attrs =
       Map.merge(times, %{
         title: params["title"],
-        description: blank_to_nil(params["description"])
+        description: blank_to_nil(params["description"]),
+        label_id: label_id(params["label_id"])
       })
 
     {attrs, channel_ids(params["channel_ids"])}
@@ -220,6 +224,13 @@ defmodule SalamendarWeb.EventParams do
   end
 
   defp channel_ids(_ids), do: []
+
+  defp label_id(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> id
+      :error -> nil
+    end
+  end
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value

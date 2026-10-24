@@ -78,6 +78,23 @@ defmodule SalamendarWeb.CoreComponentsTest do
       assert html =~ ~r/value="b"[^>]*checked/
     end
 
+    test "renders a select with a prompt and grouped options" do
+      html =
+        render_input(
+          field: event_form(%{"label_id" => "b"})[:label_id],
+          type: "select",
+          label: "Label",
+          prompt: "None",
+          options: [{"Shared", [{"Holiday", "a"}]}, {"Mine", [{"On call", "b"}]}]
+        )
+
+      assert html =~ ~s(<label for="event_label_id" class="field-label">Label</label>)
+      assert html =~ ~s(<select id="event_label_id" name="event[label_id]")
+      assert html =~ ~s(<option value="">None</option>)
+      assert html =~ ~s(<optgroup label="Shared"><option value="a">Holiday</option></optgroup>)
+      assert html =~ ~s(<option selected value="b">On call</option>)
+    end
+
     test "renders a textarea" do
       html =
         render_input(

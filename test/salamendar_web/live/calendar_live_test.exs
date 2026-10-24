@@ -581,6 +581,71 @@ defmodule SalamendarWeb.CalendarLiveTest do
       assert has_element?(view, "#event-panel-title", "Sync")
     end
 
+    test "the label picker sets and clears an event's label", %{
+      conn: conn,
+      viewer: viewer,
+      owner: owner,
+      team: team
+    } do
+      {:ok, mine} = Labels.create_label(viewer, %{name: "On call", color: "red"}, :personal)
+      {:ok, ours} = Labels.create_label(owner, %{name: "Holiday", color: "green"}, :shared)
+      {:ok, _} = Labels.create_label(owner, %{name: "Theirs", color: "blue"}, :personal)
+      event = event!(viewer, "Offsite", [team])
+
+      {:ok, view, _html} = chicago(conn)
+      render_hook(view, "open", %{"id" => event.id})
+      view |> element("#event-panel button", "Edit") |> render_click()
+
+      assert has_element?(view, "#event_label_id option[value='']", "None")
+
+      assert has_element?(
+               view,
+               "#event_label_id optgroup[label=Shared] option",
+               "Holiday · Green"
+             )
+
+      assert has_element?(view, "#event_label_id optgroup[label=Mine] option", "On call · Red")
+      refute has_element?(view, "#event_label_id option", "Theirs")
+      refute has_element?(view, ".label-picker .swatch")
+
+      # Choosing a label shows its color before saving.
+      view |> form("#event-form", event: %{label_id: mine.id}) |> render_change()
+      assert has_element?(view, ".label-picker .swatch[style*='#d50000']")
+
+      view |> form("#event-form", event: %{label_id: ours.id}) |> render_submit()
+
+      assert Repo.reload!(event).label_id == ours.id
+      assert has_element?(view, ".event-label", "Holiday")
+
+      view |> element("#event-panel button", "Edit") |> render_click()
+      assert has_element?(view, "#event_label_id option[selected]", "Holiday")
+
+      view |> form("#event-form", event: %{label_id: ""}) |> render_submit()
+      assert Repo.reload!(event).label_id == nil
+    end
+
+    test "someone else's personal label is refused on the field", %{
+      conn: conn,
+      viewer: viewer,
+      owner: owner,
+      team: team
+    } do
+      {:ok, theirs} = Labels.create_label(owner, %{name: "Theirs", color: "blue"}, :personal)
+      event = event!(viewer, "Offsite", [team])
+
+      {:ok, view, _html} = chicago(conn)
+      render_hook(view, "open", %{"id" => event.id})
+      view |> element("#event-panel button", "Edit") |> render_click()
+
+      # Not an option, so as a forged submission.
+      html =
+        view |> element("#event-form") |> render_submit(%{event: %{label_id: theirs.id}})
+
+      assert html =~ "is not a label you can use"
+      assert has_element?(view, "#event_label_id.field-input-error")
+      assert Repo.reload!(event).label_id == nil
+    end
+
     test "Cancel goes back to the details, or closes a new event", %{
       conn: conn,
       viewer: viewer,

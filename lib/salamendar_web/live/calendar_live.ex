@@ -57,6 +57,8 @@ defmodule SalamendarWeb.CalendarLive do
        form: nil,
        editing: nil,
        channel_options: [],
+       label_options: [],
+       label_colors: %{},
        week_start: common_week_start(channels)
      )}
   end
@@ -265,10 +267,19 @@ defmodule SalamendarWeb.CalendarLive do
       for channel <- Channels.list_picker_channels(socket.assigns.current_user, current),
           do: {"#" <> (channel.name || channel.slack_channel_id), channel.id}
 
+    labels = Labels.list_labels(socket.assigns.current_user)
+
     assign(socket,
       editing: editing,
       form: event_form(params, []),
-      channel_options: options
+      channel_options: options,
+      label_options:
+        for(
+          {group, labels} <- [{"Shared", labels.shared}, {"Mine", labels.mine}],
+          labels != [],
+          do: {group, Enum.map(labels, &{"#{&1.name} · #{Colors.get(&1.color).name}", &1.id})}
+        ),
+      label_colors: Map.new(labels.shared ++ labels.mine, &{&1.id, Colors.get(&1.color)})
     )
   end
 
@@ -425,6 +436,8 @@ defmodule SalamendarWeb.CalendarLive do
           form={@form}
           new?={not match?(%Event{}, @editing)}
           channel_options={@channel_options}
+          label_options={@label_options}
+          label_colors={@label_colors}
         />
 
         <.event_panel
@@ -544,9 +557,15 @@ defmodule SalamendarWeb.CalendarLive do
   attr :form, Phoenix.HTML.Form, required: true
   attr :new?, :boolean, required: true
   attr :channel_options, :list, required: true
+  attr :label_options, :list, required: true, doc: "grouped `{name, id}` options"
+  attr :label_colors, :map, required: true, doc: "each label's color, by ID"
 
   defp form_panel(assigns) do
-    assigns = assign(assigns, all_day?: EventParams.all_day?(assigns.form.params))
+    assigns =
+      assign(assigns,
+        all_day?: EventParams.all_day?(assigns.form.params),
+        label_color: Map.get(assigns.label_colors, assigns.form[:label_id].value)
+      )
 
     ~H"""
     <aside
@@ -590,6 +609,21 @@ defmodule SalamendarWeb.CalendarLive do
           You aren't in any channels with the calendar on yet. Run <code>/salamendar enable</code>
           in a channel to start one.
         </p>
+
+        <div class="label-picker">
+          <.input
+            field={@form[:label_id]}
+            type="select"
+            label="Label"
+            prompt="None"
+            options={@label_options}
+          />
+          <span
+            :if={@label_color}
+            class="swatch"
+            style={"background: #{@label_color.background}"}
+          ></span>
+        </div>
 
         <.input field={@form[:description]} type="textarea" label="Description" />
 

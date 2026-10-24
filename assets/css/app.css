@@ -452,6 +452,22 @@ textarea.field-input {
   color: var(--danger);
 }
 
+/* The label select in the event form, with a swatch of the chosen color */
+
+.label-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.label-picker .field {
+  flex: 1;
+}
+
+.label-picker .swatch {
+  margin-top: 1rem;
+}
+
 /* Hidden from sight but read by screen readers */
 
 .visually-hidden {

@@ -100,8 +100,24 @@ defmodule SalamendarWeb.EventParamsTest do
                "ends_at" => "2026-10-14T09:15",
                "start_date" => "2026-10-14",
                "end_date" => "2026-10-14",
-               "channel_ids" => ["c1", "c2"]
+               "channel_ids" => ["c1", "c2"],
+               "label_id" => ""
              }
+    end
+
+    test "fills in the event's label" do
+      label_id = Ecto.UUID.generate()
+
+      event = %Event{
+        title: "On call",
+        all_day: true,
+        start_date: ~D[2026-10-12],
+        end_date: ~D[2026-10-13],
+        channels: [],
+        label_id: label_id
+      }
+
+      assert %{"label_id" => ^label_id} = EventParams.from_event(event, @chicago)
     end
 
     test "fills in an all-day event with its inclusive last day" do
@@ -148,8 +164,22 @@ defmodule SalamendarWeb.EventParamsTest do
                starts_at: ~U[2026-10-14 14:00:00Z],
                ends_at: ~U[2026-10-14 14:15:00Z],
                start_date: nil,
-               end_date: nil
+               end_date: nil,
+               label_id: nil
              }
+    end
+
+    test "reads the label, treating blank and malformed IDs as none" do
+      label_id = Ecto.UUID.generate()
+
+      read = fn value ->
+        elem(EventParams.to_attrs(%{"label_id" => value}, @chicago), 0).label_id
+      end
+
+      assert read.(label_id) == label_id
+      assert read.("") == nil
+      assert read.("nope") == nil
+      assert read.(nil) == nil
     end
 
     test "uses the same wall-clock time on both sides of the DST change" do

@@ -84,6 +84,9 @@ defmodule SalamendarWeb.CoreComponents do
     * `"checkgroup"`: one checkbox per `options` entry (`{label, value}`),
       sent as a list. An empty hidden value keeps the list present when
       nothing is checked, so callers should drop `""`.
+    * `"select"`: `options` as `{label, value}` pairs, or grouped as
+      `{group, [{label, value}, ...]}` (rendered as `<optgroup>`s), after an
+      optional `prompt` with an empty value.
     * `"textarea"`.
     * Anything else is an `<input type=...>`, such as `"text"`, `"date"` or
       `"datetime-local"`.
@@ -98,14 +101,19 @@ defmodule SalamendarWeb.CoreComponents do
 
   attr :type, :string,
     default: "text",
-    values: ~w(checkbox checkgroup date datetime-local text textarea hidden)
+    values: ~w(checkbox checkgroup date datetime-local select text textarea hidden)
 
   attr :field, Phoenix.HTML.FormField,
     doc: "a form field struct retrieved from the form, for example: @form[:title]"
 
   attr :errors, :list, default: []
   attr :checked, :boolean, doc: "the checked flag for checkbox inputs"
-  attr :options, :list, default: [], doc: "`{label, value}` pairs for checkgroup inputs"
+
+  attr :options, :list,
+    default: [],
+    doc: "`{label, value}` pairs for checkgroup and select inputs"
+
+  attr :prompt, :string, default: nil, doc: "the first, empty option of a select"
 
   attr :rest, :global,
     include:
@@ -167,6 +175,24 @@ defmodule SalamendarWeb.CoreComponents do
       </label>
       <.error :for={msg <- @errors}>{msg}</.error>
     </fieldset>
+    """
+  end
+
+  def input(%{type: "select"} = assigns) do
+    ~H"""
+    <div class="field">
+      <label :if={@label} for={@id} class="field-label">{@label}</label>
+      <select
+        id={@id}
+        name={@name}
+        class={["field-input", @errors != [] && "field-input-error"]}
+        {@rest}
+      >
+        <option :if={@prompt} value="">{@prompt}</option>
+        {Form.options_for_select(@options, @value)}
+      </select>
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
     """
   end
 
