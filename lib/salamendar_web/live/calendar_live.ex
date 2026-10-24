@@ -17,12 +17,17 @@ defmodule SalamendarWeb.CalendarLive do
   (`timeZone: "local"`). It comes from the `timeZone` connect param, falling
   back to the user's Slack zone before the socket connects or if the
   browser sends something unknown.
+
+  Clicking an event opens the event panel (`:event`), which shows its
+  details to anyone who can see it.
   """
   use SalamendarWeb, :live_view
 
   alias Salamendar.{Accounts, Calendar, Channels, Colors, TimeZones}
+  alias Salamendar.Accounts.User
   alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.Workers.PublishHome
+  alias SalamendarWeb.EventTimes
 
   # The longest range a fetch may ask for. A month grid shows six weeks.
   @max_fetch_days 62
@@ -42,6 +47,7 @@ defmodule SalamendarWeb.CalendarLive do
        own: true,
        own_color: Colors.for_user(user),
        time_zone: browser_time_zone(socket, user),
+       event: nil,
        week_start: common_week_start(channels)
      )}
   end
@@ -107,6 +113,15 @@ defmodule SalamendarWeb.CalendarLive do
     end
   end
 
+  def handle_event("open", %{"id" => id}, socket) do
+    case Calendar.get_visible_event(socket.assigns.current_user, id) do
+      nil -> {:noreply, socket}
+      event -> {:noreply, assign(socket, event: event)}
+    end
+  end
+
+  def handle_event("close", _params, socket), do: {:noreply, assign(socket, event: nil)}
+
   def handle_event("toggle_channel", %{"id" => id}, socket) do
     if MapSet.member?(socket.assigns.channel_ids, id) do
       checked = socket.assigns.checked
@@ -126,8 +141,16 @@ defmodule SalamendarWeb.CalendarLive do
     {:noreply, socket |> assign(own: not socket.assigns.own) |> push_event("refetch", %{})}
   end
 
+  # The open event may have changed too: reload it, closing the panel if
+  # it's gone or no longer visible.
   @impl true
-  def handle_info(:calendar_changed, socket), do: {:noreply, push_event(socket, "refetch", %{})}
+  def handle_info(:calendar_changed, socket) do
+    event =
+      if open = socket.assigns.event,
+        do: Calendar.get_visible_event(socket.assigns.current_user, open.id)
+
+    {:noreply, socket |> assign(event: event) |> push_event("refetch", %{})}
+  end
 
   # Dates for an all-day event, instants for a timed one, according to the
   # stored event: a drag never switches between them.
@@ -248,6 +271,14 @@ defmodule SalamendarWeb.CalendarLive do
           </footer>
         </aside>
 
+        <.event_panel
+          :if={@event}
+          event={@event}
+          viewer={@current_user}
+          channel_ids={@channel_ids}
+          time_zone={@time_zone}
+        />
+
         <div
           id="calendar"
           class="calendar ec-auto-dark"
@@ -260,4 +291,62 @@ defmodule SalamendarWeb.CalendarLive do
     </Layouts.app>
     """
   end
+
+  attr :event, Event, required: true
+  attr :viewer, User, required: true
+  attr :channel_ids, MapSet, required: true, doc: "channels the viewer may see named"
+  attr :time_zone, :string, required: true
+
+  defp event_panel(assigns) do
+    assigns =
+      assign(assigns,
+        color: Colors.for_event(assigns.event),
+        own?: assigns.event.owner_id == assigns.viewer.id,
+        channels:
+          for(
+            channel <- assigns.event.channels,
+            MapSet.member?(assigns.channel_ids, channel.id),
+            do: channel.name || channel.slack_channel_id
+          )
+      )
+
+    ~H"""
+    <aside
+      id="event-panel"
+      class="event-panel"
+      role="dialog"
+      aria-labelledby="event-panel-title"
+      phx-window-keydown="close"
+      phx-key="Escape"
+    >
+      <header class="event-panel-header">
+        <span class="swatch" style={"background: #{@color.background}"}></span>
+        <h2 id="event-panel-title">{@event.title}</h2>
+        <button type="button" class="event-panel-close" phx-click="close" aria-label="Close">
+          ×
+        </button>
+      </header>
+
+      <p class="event-when">{EventTimes.format(@event, @time_zone)}</p>
+
+      <dl class="event-details">
+        <dt>Owner</dt>
+        <dd class="event-owner">{if @own?, do: "You", else: owner_name(@event.owner)}</dd>
+
+        <%= if @channels != [] do %>
+          <dt>Channels</dt>
+          <dd class="event-channels">{Enum.map_join(@channels, " ", &"##{&1}")}</dd>
+        <% end %>
+      </dl>
+
+      <p :if={@event.description} class="event-description">{@event.description}</p>
+    </aside>
+    """
+  end
+
+  defp owner_name(%User{name: name}) when is_binary(name) and name != "",
+    do: name
+
+  defp owner_name(%User{slack_user_id: slack_user_id}), do: slack_user_id
+  defp owner_name(nil), do: "Someone who has left"
 end

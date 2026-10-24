@@ -68,6 +68,7 @@ export const Calendar = {
               .catch(() => []),
         },
       ],
+      eventClick: ({event}) => this.pushEvent("open", {id: event.id}),
       eventDrop: (info) => this.reschedule(info),
       eventResize: (info) => this.reschedule(info),
       eventDidMount: ({el, event}) => {

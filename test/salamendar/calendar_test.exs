@@ -451,6 +451,74 @@ defmodule Salamendar.CalendarTest do
     end
   end
 
+  describe "get_visible_event/2" do
+    setup do
+      owner = user!("U1")
+      viewer = user!("U2")
+      %{owner: owner, viewer: viewer, channel: channel!("C1", members: [viewer])}
+    end
+
+    defp visible?(viewer, event), do: not is_nil(Calendar.get_visible_event(viewer, event.id))
+
+    test "finds an event in the viewer's channels, with its owner and channels", %{
+      owner: owner,
+      viewer: viewer,
+      channel: channel
+    } do
+      event = event!(owner, timed(~U[2026-10-12 14:00:00Z], ~U[2026-10-12 15:00:00Z]), [channel])
+
+      assert %Event{} = found = Calendar.get_visible_event(viewer, event.id)
+      assert found.owner.id == owner.id
+      assert [%{id: channel_id}] = found.channels
+      assert channel_id == channel.id
+    end
+
+    test "finds the viewer's own events in channels they've left", %{viewer: viewer} do
+      left = channel!("C2", members: [viewer])
+      event = event!(viewer, timed(~U[2026-10-12 14:00:00Z], ~U[2026-10-12 15:00:00Z]), [left])
+      :ok = Channels.remove_member(left, viewer)
+
+      assert visible?(viewer, event)
+    end
+
+    test "hides events in channels the viewer isn't in, or that are off or archived", %{
+      owner: owner,
+      viewer: viewer,
+      channel: channel
+    } do
+      elsewhere = channel!("C2", members: [owner])
+
+      hidden =
+        event!(owner, timed(~U[2026-10-12 14:00:00Z], ~U[2026-10-12 15:00:00Z]), [elsewhere])
+
+      refute visible?(viewer, hidden)
+
+      event = event!(owner, timed(~U[2026-10-12 14:00:00Z], ~U[2026-10-12 15:00:00Z]), [channel])
+      {:ok, archived} = Channels.archive_channel(channel)
+      refute visible?(viewer, event)
+
+      {:ok, unarchived} = Channels.unarchive_channel(archived)
+      {:ok, _} = Channels.disable_calendar(unarchived)
+      refute visible?(viewer, event)
+    end
+
+    test "hides another workspace's events, even the viewer's own ID", %{viewer: viewer} do
+      stranger = user!("U9", "Etc/UTC", "TOTHER")
+      theirs = channel!("C9", team_id: "TOTHER", members: [stranger])
+
+      event =
+        event!(stranger, timed(~U[2026-10-12 14:00:00Z], ~U[2026-10-12 15:00:00Z]), [theirs])
+
+      refute visible?(viewer, event)
+    end
+
+    test "returns nil for unknown and malformed IDs", %{viewer: viewer} do
+      assert is_nil(Calendar.get_visible_event(viewer, Ecto.UUID.generate()))
+      assert is_nil(Calendar.get_visible_event(viewer, "nope"))
+      assert is_nil(Calendar.get_visible_event(viewer, nil))
+    end
+  end
+
   describe "list_visible_events/4" do
     # The week of Oct 11, 2026 as a browser in Chicago asks for it: local
     # midnights (CDT, UTC-5) and local dates.

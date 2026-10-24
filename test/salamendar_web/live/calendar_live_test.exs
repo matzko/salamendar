@@ -289,6 +289,94 @@ defmodule SalamendarWeb.CalendarLiveTest do
     end
   end
 
+  describe "the event panel" do
+    defp open(view, event), do: render_hook(view, "open", %{"id" => event.id})
+
+    test "shows someone else's event read-only", %{conn: conn, owner: owner, team: team} do
+      private = channel!("C3", [owner], %{name: "secret", is_private: true})
+
+      {:ok, event, _} =
+        Calendar.create_event(
+          owner,
+          %{
+            title: "Standup",
+            description: "Bring updates",
+            time_zone: "America/Chicago",
+            starts_at: ~U[2026-10-14 14:00:00Z],
+            ends_at: ~U[2026-10-14 14:15:00Z]
+          },
+          [team, private]
+        )
+
+      {:ok, view, _html} =
+        conn |> put_connect_params(%{"timeZone" => "America/Chicago"}) |> live(~p"/")
+
+      refute has_element?(view, "#event-panel")
+      open(view, event)
+
+      assert has_element?(view, "#event-panel-title", "Standup")
+      assert has_element?(view, ".event-when", "Wed, Oct 14, 2026, 9:00 AM – 9:15 AM")
+      assert has_element?(view, ".event-owner", "Grace")
+      assert has_element?(view, ".event-description", "Bring updates")
+      # The private channel the viewer isn't in isn't named.
+      assert view |> element(".event-channels") |> render() =~ ~r/>\s*#team\s*</
+      refute has_element?(view, "#event-panel form")
+      refute has_element?(view, "#event-panel button", "Save")
+    end
+
+    test "shows the viewer's own event as theirs", %{conn: conn, viewer: viewer, team: team} do
+      event = event!(viewer, "Offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      open(view, event)
+      assert has_element?(view, ".event-owner", "You")
+      assert has_element?(view, ".event-when", "Mon, Oct 12, 2026")
+    end
+
+    test "doesn't open an event the viewer can't see", %{conn: conn, owner: owner} do
+      private = channel!("C3", [owner], %{is_private: true})
+      event = event!(owner, "Secret", [private])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      open(view, event)
+      refute has_element?(view, "#event-panel")
+
+      render_hook(view, "open", %{"id" => "nope"})
+      refute has_element?(view, "#event-panel")
+    end
+
+    test "closes with the close button or Escape", %{conn: conn, owner: owner, team: team} do
+      event = event!(owner, "Team offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      open(view, event)
+      view |> element(".event-panel-close") |> render_click()
+      refute has_element?(view, "#event-panel")
+
+      open(view, event)
+      view |> element("#event-panel") |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "#event-panel")
+    end
+
+    test "follows changes to the open event, closing when it's deleted", %{
+      conn: conn,
+      owner: owner,
+      team: team
+    } do
+      event = event!(owner, "Team offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+      open(view, event)
+
+      {:ok, event, ids} = Calendar.update_event(owner, event, %{title: "Moved offsite"}, [team])
+      Changes.broadcast(ids, owner.id)
+      assert has_element?(view, "#event-panel-title", "Moved offsite")
+
+      {:ok, _, ids} = Calendar.delete_event(owner, event)
+      Changes.broadcast(ids, owner.id)
+      refute has_element?(view, "#event-panel")
+    end
+  end
+
   describe "time zone" do
     test "uses the browser's zone", %{conn: conn} do
       {:ok, view, _html} =

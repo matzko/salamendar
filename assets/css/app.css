@@ -131,6 +131,68 @@ body {
   display: none;
 }
 
+/* The event panel: a side panel over the calendar, full screen on phones */
+
+.event-panel {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 30;
+  width: min(24rem, 100vw);
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -2px 0 12px rgb(0 0 0 / 0.2);
+}
+
+.event-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.event-panel-header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.event-panel-close {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.event-when {
+  margin: 0.5rem 0 1rem;
+}
+
+.event-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.event-details dt {
+  color: var(--muted);
+}
+
+.event-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.event-description {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 /* Phones: the sidebar is a drawer behind a button, and the toolbar is
    smaller. */
 @media (max-width: 640px) {
@@ -170,6 +232,13 @@ body {
 
   .sidebar.open {
     display: flex;
+  }
+
+  .event-panel {
+    inset: 0;
+    width: auto;
+    border-left: 0;
+    box-shadow: none;
   }
 
   /* The title gets its own row above the buttons. */

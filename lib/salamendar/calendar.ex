@@ -187,6 +187,40 @@ defmodule Salamendar.Calendar do
     channel_ids = Keyword.get(opts, :channel_ids)
     own? = is_nil(channel_ids) or Keyword.get(opts, :own, true)
 
+    from(e in Event,
+      where: ^visible(user, channel_ids, own?),
+      where: ^overlaps(from, to),
+      order_by: ^chronological(),
+      preload: [:owner, :channels]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  The event with `id` if `user` can see it (by the rules of
+  `list_visible_events/4`), with `:owner` and `:channels` preloaded.
+  Otherwise, or if `id` isn't a UUID, `nil`.
+  """
+  @spec get_visible_event(User.t(), term()) :: Event.t() | nil
+  def get_visible_event(%User{} = user, id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} ->
+        from(e in Event,
+          where: e.id == ^id,
+          where: ^visible(user, nil, true),
+          preload: [:owner, :channels]
+        )
+        |> Repo.one()
+
+      :error ->
+        nil
+    end
+  end
+
+  # Events in `user`'s workspace that are in their calendar-enabled,
+  # unarchived channels (only `channel_ids`, if given), plus their own if
+  # `own?`.
+  defp visible(user, channel_ids, own?) do
     # A subquery rather than joins, so an event in several of the user's
     # channels comes back once.
     via_channels =
@@ -204,19 +238,18 @@ defmodule Salamendar.Calendar do
         do: where(via_channels, [ec], ec.channel_id in type(^channel_ids, {:array, :binary_id})),
         else: via_channels
 
-    visible =
-      if own?,
-        do: dynamic([e], e.id in subquery(via_channels) or e.owner_id == ^user.id),
-        else: dynamic([e], e.id in subquery(via_channels))
-
-    from(e in Event,
-      where: e.slack_team_id == ^user.slack_team_id,
-      where: ^visible,
-      where: ^overlaps(from, to),
-      order_by: ^chronological(),
-      preload: [:owner, :channels]
-    )
-    |> Repo.all()
+    if own?,
+      do:
+        dynamic(
+          [e],
+          e.slack_team_id == ^user.slack_team_id and
+            (e.id in subquery(via_channels) or e.owner_id == ^user.id)
+        ),
+      else:
+        dynamic(
+          [e],
+          e.slack_team_id == ^user.slack_team_id and e.id in subquery(via_channels)
+        )
   end
 
   @doc """
