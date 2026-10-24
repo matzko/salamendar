@@ -4,7 +4,7 @@ defmodule Salamendar.Bot.HomeTest do
 
   import Mox
 
-  alias Salamendar.{Accounts, Bot, Calendar, Channels}
+  alias Salamendar.{Accounts, Bot, Calendar, Channels, Colors}
   alias Salamendar.SlackAPI.Mock
   alias Salamendar.Workers.PublishHome
   alias SalamendarWeb.SignInLink
@@ -82,7 +82,15 @@ defmodule Salamendar.Bot.HomeTest do
     home_opened()
 
     assert_received {:blocks, blocks}
-    assert Enum.any?(blocks, &match?(%{type: "section", text: %{text: "*Offsite*" <> _}}, &1))
+    emoji = Colors.for_user(user).emoji
+
+    assert Enum.any?(blocks, fn
+             %{type: "section", text: %{text: text}} ->
+               String.starts_with?(text, emoji <> " *Offsite*")
+
+             _ ->
+               false
+           end)
 
     user = Repo.reload!(user)
     assert user.name == "Ada Lovelace"

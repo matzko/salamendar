@@ -11,9 +11,11 @@ defmodule SalamendarWeb.EventJSON do
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.Event
   alias Salamendar.Colors
+  alias Salamendar.Labels.Label
 
   @doc """
-  `event` as `viewer` sees it. `:owner` and `:channels` must be preloaded.
+  `event` as `viewer` sees it. `:label`, `:owner` and `:channels` must be
+  preloaded.
   Only the channels in `visible_channel_ids` are named, so an event doesn't
   reveal private channels the viewer isn't in.
 
@@ -37,6 +39,7 @@ defmodule SalamendarWeb.EventJSON do
       durationEditable: own?,
       extendedProps: %{
         owner: owner_name(event.owner),
+        label: label_name(event.label),
         channels:
           for(
             channel <- event.channels,
@@ -67,6 +70,9 @@ defmodule SalamendarWeb.EventJSON do
     |> DateTime.truncate(:second)
     |> DateTime.to_iso8601()
   end
+
+  defp label_name(%Label{name: name}), do: name
+  defp label_name(_label), do: nil
 
   defp owner_name(%User{name: name}) when is_binary(name) and name != "", do: name
   defp owner_name(%User{slack_user_id: slack_user_id}), do: slack_user_id

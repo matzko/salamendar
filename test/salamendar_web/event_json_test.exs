@@ -4,6 +4,7 @@ defmodule SalamendarWeb.EventJSONTest do
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.Event
   alias Salamendar.Channels.Channel
+  alias Salamendar.Labels.Label
   alias SalamendarWeb.EventJSON
 
   @owner %User{id: "owner", name: "Ada", slack_user_id: "U1", color: "red"}
@@ -37,8 +38,27 @@ defmodule SalamendarWeb.EventJSONTest do
              textColor: "#ffffff",
              startEditable: false,
              durationEditable: false,
-             extendedProps: %{owner: "Ada", channels: ["team"], description: nil}
+             extendedProps: %{owner: "Ada", label: nil, channels: ["team"], description: nil}
            }
+  end
+
+  test "colors a labeled event by its label and names the label" do
+    json =
+      EventJSON.event(
+        event(label: %Label{name: "On call", color: "green"}),
+        @viewer,
+        MapSet.new()
+      )
+
+    assert %{backgroundColor: "#0b8043", textColor: "#ffffff"} = json
+    assert json.extendedProps.label == "On call"
+  end
+
+  test "colors an unlabeled event by its owner" do
+    json = EventJSON.event(event(label: nil), @viewer, MapSet.new())
+
+    assert %{backgroundColor: "#d50000"} = json
+    assert json.extendedProps.label == nil
   end
 
   test "renders an all-day event with its exclusive end date" do

@@ -109,6 +109,40 @@ body {
   white-space: nowrap;
 }
 
+/* The label legend in the sidebar */
+
+.label-legend {
+  margin-top: 1rem;
+}
+
+.label-legend h3 {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.label-legend ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0;
+}
+
+.label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .swatch {
   flex: none;
   width: 0.75rem;

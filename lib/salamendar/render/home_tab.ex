@@ -11,6 +11,7 @@ defmodule Salamendar.Render.HomeTab do
   alias Salamendar.Accounts
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.Event
+  alias Salamendar.Colors
   alias Salamendar.Render.Period
 
   @max_blocks 100
@@ -39,7 +40,8 @@ defmodule Salamendar.Render.HomeTab do
   @doc """
   Blocks for `user`'s Home tab on `date`, showing `events` (e.g. from
   `Calendar.list_user_events_on/2`) in order. Channels are listed when the
-  events' `:channels` are preloaded.
+  events' `:channels` are preloaded, and each event starts with its color's
+  emoji (see `Salamendar.Colors.for_event/1`).
 
   `:calendar_url` in `opts` adds the "Open calendar" button.
   """
@@ -103,7 +105,7 @@ defmodule Salamendar.Render.HomeTab do
   defp event_block(event, user, date, time_zone) do
     lines =
       [
-        "*#{escape(event.title)}*",
+        "#{Colors.for_event(event).emoji} *#{escape(event.title)}*",
         when_text(event, date, time_zone),
         channels_text(event),
         description_text(event.description)

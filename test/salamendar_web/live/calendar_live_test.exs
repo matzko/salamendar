@@ -4,7 +4,7 @@ defmodule SalamendarWeb.CalendarLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Salamendar.{Accounts, Calendar, Channels, Repo}
+  alias Salamendar.{Accounts, Calendar, Channels, Labels, Repo}
   alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.Workers.PublishHome
 
@@ -80,6 +80,47 @@ defmodule SalamendarWeb.CalendarLiveTest do
     {:ok, view, _html} = live(conn, ~p"/")
 
     assert fetch(view) == ["Team offsite"]
+  end
+
+  test "the sidebar's legend lists the viewer's labels", %{
+    conn: conn,
+    viewer: viewer,
+    owner: owner
+  } do
+    {:ok, view, _html} = live(conn, ~p"/")
+    assert has_element?(view, ".label-legend", "Make labels in Settings")
+
+    {:ok, _} = Labels.create_label(viewer, %{name: "On call", color: "red"}, :personal)
+    {:ok, _} = Labels.create_label(owner, %{name: "Holiday", color: "green"}, :shared)
+    {:ok, _} = Labels.create_label(owner, %{name: "Theirs", color: "blue"}, :personal)
+
+    {:ok, view, _html} = live(conn, ~p"/")
+    assert view |> element(".label-legend") |> render() =~ ~r/Shared.*Holiday.*Mine.*On call/s
+    refute has_element?(view, ".label-legend", "Theirs")
+    refute has_element?(view, ".label-legend", "Make labels in Settings")
+  end
+
+  test "fetch colors events by their label", %{conn: conn, owner: owner, team: team} do
+    {:ok, label} = Labels.create_label(owner, %{name: "Holiday", color: "green"}, :shared)
+
+    {:ok, _, _} =
+      Calendar.create_event(
+        owner,
+        %{
+          title: "Day off",
+          time_zone: "America/Chicago",
+          all_day: true,
+          start_date: ~D[2026-10-12],
+          end_date: ~D[2026-10-13],
+          label_id: label.id
+        },
+        [team]
+      )
+
+    {:ok, view, _html} = live(conn, ~p"/")
+    render_hook(view, "fetch", @week)
+    assert_reply(view, %{events: [event]})
+    assert %{backgroundColor: "#0b8043", extendedProps: %{label: "Holiday"}} = event
   end
 
   test "fetch rejects bad and oversized ranges", %{conn: conn, owner: owner, team: team} do
@@ -331,6 +372,18 @@ defmodule SalamendarWeb.CalendarLiveTest do
       open(view, event)
       assert has_element?(view, ".event-owner", "You")
       assert has_element?(view, ".event-when", "Mon, Oct 12, 2026")
+      refute has_element?(view, ".event-label")
+    end
+
+    test "shows the event's label", %{conn: conn, viewer: viewer, team: team} do
+      {:ok, label} = Labels.create_label(viewer, %{name: "On call", color: "red"}, :personal)
+      event = event!(viewer, "Offsite", [team])
+      {:ok, event, _} = Calendar.update_event(viewer, event, %{label_id: label.id}, [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      open(view, event)
+      assert has_element?(view, ".event-label", "On call")
+      assert has_element?(view, ".event-panel-header .swatch[style*='#d50000']")
     end
 
     test "doesn't open an event the viewer can't see", %{conn: conn, owner: owner} do

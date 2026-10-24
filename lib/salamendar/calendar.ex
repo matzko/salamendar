@@ -212,8 +212,8 @@ defmodule Salamendar.Calendar do
   @doc """
   Events `user` can see that overlap `[from, to)`: those in calendar-enabled,
   unarchived channels they're a member of, plus their own (wherever they
-  are). All-day events first, then by start. `:owner` and `:channels` are
-  preloaded.
+  are). All-day events first, then by start. `:label`, `:owner` and
+  `:channels` are preloaded.
 
   Options:
 
@@ -231,14 +231,15 @@ defmodule Salamendar.Calendar do
       where: ^visible(user, channel_ids, own?),
       where: ^overlaps(from, to),
       order_by: ^chronological(),
-      preload: [:owner, :channels]
+      preload: [:label, :owner, :channels]
     )
     |> Repo.all()
   end
 
   @doc """
   The event with `id` if `user` can see it (by the rules of
-  `list_visible_events/4`), with `:owner` and `:channels` preloaded.
+  `list_visible_events/4`), with `:label`, `:owner` and `:channels`
+  preloaded.
   Otherwise, or if `id` isn't a UUID, `nil`.
   """
   @spec get_visible_event(User.t(), term()) :: Event.t() | nil
@@ -248,7 +249,7 @@ defmodule Salamendar.Calendar do
         from(e in Event,
           where: e.id == ^id,
           where: ^visible(user, nil, true),
-          preload: [:owner, :channels]
+          preload: [:label, :owner, :channels]
         )
         |> Repo.one()
 

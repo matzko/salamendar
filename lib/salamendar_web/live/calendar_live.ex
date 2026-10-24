@@ -27,7 +27,7 @@ defmodule SalamendarWeb.CalendarLive do
   """
   use SalamendarWeb, :live_view
 
-  alias Salamendar.{Accounts, Calendar, Channels, Colors, TimeZones}
+  alias Salamendar.{Accounts, Calendar, Channels, Colors, Labels, TimeZones}
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.Channels.Channel
@@ -51,6 +51,7 @@ defmodule SalamendarWeb.CalendarLive do
        checked: MapSet.new(channels, & &1.id),
        own: true,
        own_color: Colors.for_user(user),
+       labels: Labels.list_labels(user),
        time_zone: browser_time_zone(socket, user),
        event: nil,
        form: nil,
@@ -409,6 +410,8 @@ defmodule SalamendarWeb.CalendarLive do
             in Slack.
           </p>
 
+          <.label_legend labels={@labels} />
+
           <footer class="sidebar-footer">
             <p class="muted">{@current_user.name || @current_user.slack_user_id}</p>
             <p class="muted time-zone">Times in {@time_zone}</p>
@@ -441,6 +444,30 @@ defmodule SalamendarWeb.CalendarLive do
         </div>
       </div>
     </Layouts.app>
+    """
+  end
+
+  attr :labels, :map, required: true, doc: "from `Labels.list_labels/1`"
+
+  defp label_legend(assigns) do
+    ~H"""
+    <section class="label-legend" aria-labelledby="label-legend-title">
+      <h2 id="label-legend-title">Labels</h2>
+
+      <%= for {heading, labels} <- [{"Shared", @labels.shared}, {"Mine", @labels.mine}], labels != [] do %>
+        <h3>{heading}</h3>
+        <ul>
+          <li :for={label <- labels} class="legend-item">
+            <span class="swatch" style={"background: #{Colors.get(label.color).background}"}></span>
+            <span class="label-name">{label.name}</span>
+          </li>
+        </ul>
+      <% end %>
+
+      <p :if={@labels.shared == [] and @labels.mine == []} class="muted">
+        Make labels in Settings to color events.
+      </p>
+    </section>
     """
   end
 
@@ -484,6 +511,11 @@ defmodule SalamendarWeb.CalendarLive do
       <dl class="event-details">
         <dt>Owner</dt>
         <dd class="event-owner">{if @own?, do: "You", else: owner_name(@event.owner)}</dd>
+
+        <%= if @event.label do %>
+          <dt>Label</dt>
+          <dd class="event-label">{@event.label.name}</dd>
+        <% end %>
 
         <%= if @channels != [] do %>
           <dt>Channels</dt>

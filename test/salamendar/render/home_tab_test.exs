@@ -4,6 +4,7 @@ defmodule Salamendar.Render.HomeTabTest do
   alias Salamendar.Accounts.User
   alias Salamendar.Calendar.Event
   alias Salamendar.Channels.Channel
+  alias Salamendar.Labels.Label
   alias Salamendar.Render.HomeTab
 
   @user %User{id: "user-1", time_zone: "America/Chicago"}
@@ -59,7 +60,7 @@ defmodule Salamendar.Render.HomeTabTest do
              %{type: "divider"},
              %{
                type: "section",
-               text: %{type: "mrkdwn", text: "*Offsite*\nAll day, Oct 8 – Oct 10\n<#C1> <#C2>"},
+               text: %{type: "mrkdwn", text: "🔵 *Offsite*\nAll day, Oct 8 – Oct 10\n<#C1> <#C2>"},
                accessory: %{
                  type: "overflow",
                  action_id: "event_menu",
@@ -74,7 +75,7 @@ defmodule Salamendar.Render.HomeTabTest do
                text: %{
                  type: "mrkdwn",
                  text:
-                   "*Standup*\n" <>
+                   "🔵 *Standup*\n" <>
                      "<!date^1791554400^{time}|9:00 AM> – <!date^1791555300^{time}|9:15 AM>\n" <>
                      "Daily sync. Bring updates."
                }
@@ -109,6 +110,27 @@ defmodule Salamendar.Render.HomeTabTest do
 
     assert text =~ "{date_short} {time}|Oct 9 5:00 PM>"
     assert text =~ "{date_short} {time}|Oct 10 2:00 AM>"
+  end
+
+  test "starts each event with its color's emoji" do
+    owner = %User{id: "owner-1", color: "green"}
+
+    [labeled, unlabeled, unknown] =
+      texts(
+        HomeTab.render(
+          [
+            timed(owner: owner, label: %Label{name: "On call", color: "red"}),
+            timed(owner: owner, label: nil),
+            timed(owner: nil, label: nil)
+          ],
+          @user,
+          @date
+        )
+      )
+
+    assert labeled =~ ~r/^🔴 \*Standup\*/
+    assert unlabeled =~ ~r/^🟢 \*Standup\*/
+    assert unknown =~ ~r/^🔵 \*Standup\*/
   end
 
   test "escapes mrkdwn control characters" do
