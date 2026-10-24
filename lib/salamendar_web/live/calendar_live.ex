@@ -415,6 +415,7 @@ defmodule SalamendarWeb.CalendarLive do
           <footer class="sidebar-footer">
             <p class="muted">{@current_user.name || @current_user.slack_user_id}</p>
             <p class="muted time-zone">Times in {@time_zone}</p>
+            <p><.link navigate={~p"/settings"}>Settings</.link></p>
             <.link href={~p"/session"} method="delete">Sign out</.link>
           </footer>
         </aside>
@@ -465,7 +466,7 @@ defmodule SalamendarWeb.CalendarLive do
       <% end %>
 
       <p :if={@labels.shared == [] and @labels.mine == []} class="muted">
-        Make labels in Settings to color events.
+        Make labels in <.link navigate={~p"/settings"}>Settings</.link> to color events.
       </p>
     </section>
     """

@@ -125,11 +125,20 @@ defmodule Salamendar.Labels do
   end
 
   @doc """
-  How many events have `label`.
+  How many events have each of `labels`, by label ID. Labels with no
+  events are left out.
   """
-  @spec count_events(Label.t()) :: non_neg_integer()
-  def count_events(%Label{id: id}) do
-    Repo.aggregate(from(e in Event, where: e.label_id == ^id), :count)
+  @spec count_events([Label.t()]) :: %{Ecto.UUID.t() => pos_integer()}
+  def count_events(labels) do
+    ids = Enum.map(labels, & &1.id)
+
+    from(e in Event,
+      where: e.label_id in ^ids,
+      group_by: e.label_id,
+      select: {e.label_id, count()}
+    )
+    |> Repo.all()
+    |> Map.new()
   end
 
   # Reloads the label under a row lock, so the check and the change see the

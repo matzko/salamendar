@@ -47,4 +47,14 @@ defmodule Salamendar.Accounts do
     do: Application.fetch_env!(:salamendar, :default_time_zone)
 
   def time_zone(%User{time_zone: time_zone}), do: time_zone
+
+  @doc """
+  Sets `user`'s color to a `Salamendar.Colors` key.
+  """
+  @spec update_color(User.t(), String.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def update_color(%User{} = user, color) do
+    user
+    |> User.changeset(%{color: color})
+    |> Repo.update()
+  end
 end

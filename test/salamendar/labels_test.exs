@@ -212,14 +212,18 @@ defmodule Salamendar.LabelsTest do
     end
   end
 
-  test "count_events/1 counts the label's events" do
+  test "count_events/1 counts each label's events" do
     owner = user!("U1")
     a = channel!("C1")
-    label = label!(owner, :shared, "Holiday")
-    assert Labels.count_events(label) == 0
+    holiday = label!(owner, :shared, "Holiday")
+    on_call = label!(owner, :personal, "On call")
+    unused = label!(owner, :personal, "Unused")
+    assert Labels.count_events([holiday]) == %{}
 
-    event!(owner, label, [a])
-    event!(user!("U2"), label, [a])
-    assert Labels.count_events(label) == 2
+    event!(owner, holiday, [a])
+    event!(user!("U2"), holiday, [a])
+    event!(owner, on_call, [a])
+
+    assert Labels.count_events([holiday, on_call, unused]) == %{holiday.id => 2, on_call.id => 1}
   end
 end

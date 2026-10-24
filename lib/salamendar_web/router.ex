@@ -31,6 +31,7 @@ defmodule SalamendarWeb.Router do
 
     live_session :signed_in, on_mount: [{SalamendarWeb.UserAuth, :require_user}] do
       live "/", CalendarLive
+      live "/settings", SettingsLive
     end
   end
 end
