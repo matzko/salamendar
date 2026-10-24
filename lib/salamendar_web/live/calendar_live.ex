@@ -19,10 +19,11 @@ defmodule SalamendarWeb.CalendarLive do
   browser sends something unknown.
 
   Clicking an event opens the event panel (`:event`), which shows its
-  details to anyone who can see it. Its owner can switch it to the form
-  (`:form`, editing `:editing`), which is also how events are added: from
-  the sidebar's button or by selecting a range on the calendar. The form's
-  params are described in `SalamendarWeb.EventParams`.
+  details to anyone who can see it. Its owner can delete it there, or
+  switch it to the form (`:form`, editing `:editing`), which is also how
+  events are added: from the sidebar's button or by selecting a range on
+  the calendar. The form's params are described in
+  `SalamendarWeb.EventParams`.
   """
   use SalamendarWeb, :live_view
 
@@ -146,6 +147,29 @@ defmodule SalamendarWeb.CalendarLive do
     if event && event.owner_id == user.id,
       do: {:noreply, open_form(socket, event, EventParams.from_event(event, time_zone))},
       else: {:noreply, socket}
+  end
+
+  # From the owner's details view, after the browser's confirmation.
+  def handle_event("delete", _params, socket) do
+    %{event: event, current_user: user} = socket.assigns
+
+    case event && Calendar.delete_event(user, event) do
+      {:ok, deleted, affected} ->
+        :ok = Changes.broadcast(affected, deleted.owner_id)
+        {:ok, _} = PublishHome.enqueue(user.slack_team_id, user.slack_user_id)
+        {:noreply, socket |> close_panel() |> put_flash(:info, "Deleted “#{deleted.title}”.")}
+
+      {:error, :forbidden} ->
+        {:noreply,
+         socket |> close_panel() |> put_flash(:error, "Only the event's owner can delete it.")}
+
+      {:error, :not_found} ->
+        {:noreply,
+         socket |> close_panel() |> put_flash(:error, "This event was already deleted.")}
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   # Back to the details of the event being edited, or closed for a new one.
@@ -471,6 +495,14 @@ defmodule SalamendarWeb.CalendarLive do
 
       <div :if={@own?} class="event-panel-actions">
         <.button type="button" phx-click="edit">Edit</.button>
+        <.button
+          type="button"
+          variant="danger"
+          phx-click="delete"
+          data-confirm={"Delete “#{@event.title}”? This can't be undone."}
+        >
+          Delete
+        </.button>
       </div>
     </aside>
     """

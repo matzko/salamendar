@@ -572,6 +572,56 @@ defmodule SalamendarWeb.CalendarLiveTest do
     end
   end
 
+  describe "deleting from the panel" do
+    test "the owner deletes after confirming", %{conn: conn, viewer: viewer, team: team} do
+      event = event!(viewer, "Offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      render_hook(view, "open", %{"id" => event.id})
+      assert has_element?(view, "#event-panel button[data-confirm]", "Delete")
+
+      html = view |> element("#event-panel button", "Delete") |> render_click()
+
+      refute Repo.get(Event, event.id)
+      refute has_element?(view, "#event-panel")
+      assert html =~ "Deleted “Offsite”."
+      assert_push_event(view, "refetch", %{})
+      assert_enqueued(worker: PublishHome, args: %{slack_user_id: "U1"})
+    end
+
+    test "someone else's event can't be deleted", %{conn: conn, owner: owner, team: team} do
+      event = event!(owner, "Team offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      render_hook(view, "open", %{"id" => event.id})
+      refute has_element?(view, "#event-panel button", "Delete")
+
+      html = render_hook(view, "delete", %{})
+      assert html =~ "Only the event&#39;s owner can delete it."
+      assert Repo.get(Event, event.id)
+      refute_enqueued(worker: PublishHome)
+    end
+
+    test "deleting with no event open does nothing", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/")
+      render_hook(view, "delete", %{})
+      refute_enqueued(worker: PublishHome)
+    end
+
+    test "an event deleted meanwhile says so", %{conn: conn, viewer: viewer, team: team} do
+      event = event!(viewer, "Offsite", [team])
+      {:ok, view, _html} = live(conn, ~p"/")
+      render_hook(view, "open", %{"id" => event.id})
+
+      # Deleted without a broadcast, so the panel is still open.
+      Repo.delete!(event)
+
+      html = view |> element("#event-panel button", "Delete") |> render_click()
+      assert html =~ "This event was already deleted."
+      refute has_element?(view, "#event-panel")
+    end
+  end
+
   describe "time zone" do
     test "uses the browser's zone", %{conn: conn} do
       {:ok, view, _html} =
