@@ -12,10 +12,15 @@ defmodule SalamendarWeb.CalendarLive do
 
   `?channel=<Slack channel ID>` (from `/salamendar open`) starts with only
   that channel checked.
+
+  `:time_zone` is the browser's zone, which EventCalendar shows times in
+  (`timeZone: "local"`). It comes from the `timeZone` connect param, falling
+  back to the user's Slack zone before the socket connects or if the
+  browser sends something unknown.
   """
   use SalamendarWeb, :live_view
 
-  alias Salamendar.{Calendar, Channels, Colors}
+  alias Salamendar.{Accounts, Calendar, Channels, Colors, TimeZones}
   alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.Workers.PublishHome
 
@@ -36,6 +41,7 @@ defmodule SalamendarWeb.CalendarLive do
        checked: MapSet.new(channels, & &1.id),
        own: true,
        own_color: Colors.for_user(user),
+       time_zone: browser_time_zone(socket, user),
        week_start: common_week_start(channels)
      )}
   end
@@ -173,6 +179,11 @@ defmodule SalamendarWeb.CalendarLive do
 
   defp fetch_range(_params), do: :error
 
+  defp browser_time_zone(socket, user) do
+    time_zone = get_connect_params(socket)["timeZone"]
+    if TimeZones.valid?(time_zone), do: time_zone, else: Accounts.time_zone(user)
+  end
+
   # Channels can start weeks on different days; use the most common.
   defp common_week_start([]), do: 0
 
@@ -232,6 +243,7 @@ defmodule SalamendarWeb.CalendarLive do
 
           <footer class="sidebar-footer">
             <p class="muted">{@current_user.name || @current_user.slack_user_id}</p>
+            <p class="muted time-zone">Times in {@time_zone}</p>
             <.link href={~p"/session"} method="delete">Sign out</.link>
           </footer>
         </aside>

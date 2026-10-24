@@ -289,6 +289,30 @@ defmodule SalamendarWeb.CalendarLiveTest do
     end
   end
 
+  describe "time zone" do
+    test "uses the browser's zone", %{conn: conn} do
+      {:ok, view, _html} =
+        conn |> put_connect_params(%{"timeZone" => "Pacific/Auckland"}) |> live(~p"/")
+
+      assert view |> element(".time-zone") |> render() =~ "Times in Pacific/Auckland"
+    end
+
+    test "falls back to the user's zone for an unknown or missing one", %{
+      conn: conn,
+      viewer: viewer
+    } do
+      fallback = "Times in #{Accounts.time_zone(viewer)}"
+
+      {:ok, view, _html} =
+        conn |> put_connect_params(%{"timeZone" => "Mars/Olympus"}) |> live(~p"/")
+
+      assert view |> element(".time-zone") |> render() =~ fallback
+
+      {:ok, view, _html} = live(conn, ~p"/")
+      assert view |> element(".time-zone") |> render() =~ fallback
+    end
+  end
+
   test "sends visitors without a session to the expired page" do
     assert {:error, {:redirect, %{to: "/auth/expired"}}} = live(build_conn(), ~p"/")
   end
