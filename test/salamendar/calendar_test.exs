@@ -5,6 +5,7 @@ defmodule Salamendar.CalendarTest do
   alias Salamendar.Calendar
   alias Salamendar.Calendar.Event
   alias Salamendar.Channels
+  alias Salamendar.Labels
 
   defp user!(slack_user_id, time_zone \\ "Etc/UTC", team_id \\ "TCA1") do
     {:ok, user} = Accounts.get_or_create_user(team_id, slack_user_id, %{time_zone: time_zone})
@@ -40,6 +41,11 @@ defmodule Salamendar.CalendarTest do
   defp event!(owner, attrs, channels) do
     {:ok, event, _} = Calendar.create_event(owner, attrs, channels)
     event
+  end
+
+  defp label!(user, scope, name \\ "On call") do
+    {:ok, label} = Labels.create_label(user, %{name: name, color: "red"}, scope)
+    label
   end
 
   defp titles(events), do: Enum.map(events, & &1.title)
@@ -204,6 +210,91 @@ defmodule Salamendar.CalendarTest do
 
       assert {:error, changeset} = Calendar.update_event(owner, event, %{}, [private])
       assert %{channels: [_]} = errors_on(changeset)
+    end
+  end
+
+  describe "labels on events" do
+    setup do
+      owner = user!("U1")
+      a = channel!("C1")
+      %{owner: owner, a: a, times: timed(~U[2026-10-10 14:00:00Z], ~U[2026-10-10 15:00:00Z])}
+    end
+
+    test "an event can have its owner's personal label or a shared one",
+         %{owner: owner, a: a, times: times} do
+      mine = label!(owner, :personal)
+      ours = label!(user!("U2"), :shared, "Holiday")
+
+      assert {:ok, event, _} =
+               Calendar.create_event(owner, Map.put(times, :label_id, mine.id), [a])
+
+      assert event.label_id == mine.id
+
+      assert {:ok, event, _} = Calendar.update_event(owner, event, %{label_id: ours.id}, [a])
+      assert event.label_id == ours.id
+
+      assert {:ok, event, _} = Calendar.update_event(owner, event, %{label_id: nil}, [a])
+      assert event.label_id == nil
+    end
+
+    test "not someone else's personal label or another workspace's",
+         %{owner: owner, a: a, times: times} do
+      theirs = label!(user!("U2"), :personal)
+      elsewhere = label!(user!("U3", "Etc/UTC", "TCA2"), :shared)
+
+      for label <- [theirs, elsewhere] do
+        assert {:error, changeset} =
+                 Calendar.create_event(owner, Map.put(times, :label_id, label.id), [a])
+
+        assert %{label_id: ["is not a label you can use"]} = errors_on(changeset)
+      end
+
+      event = event!(owner, times, [a])
+
+      assert {:error, changeset} =
+               Calendar.update_event(owner, event, %{label_id: theirs.id}, [a])
+
+      assert %{label_id: ["is not a label you can use"]} = errors_on(changeset)
+    end
+
+    test "a deleted label is an error on the field", %{owner: owner, a: a, times: times} do
+      label = label!(owner, :personal)
+      {:ok, _, _} = Labels.delete_label(owner, label)
+
+      assert {:error, changeset} =
+               Calendar.create_event(owner, Map.put(times, :label_id, label.id), [a])
+
+      assert %{label_id: [_]} = errors_on(changeset)
+    end
+
+    test "rescheduling leaves the label alone", %{owner: owner, a: a, times: times} do
+      label = label!(owner, :personal)
+      event = event!(owner, Map.put(times, :label_id, label.id), [a])
+
+      assert {:ok, moved, _} =
+               Calendar.reschedule_event(owner, event, %{
+                 starts_at: ~U[2026-10-12 16:00:00Z],
+                 ends_at: ~U[2026-10-12 18:00:00Z],
+                 label_id: nil
+               })
+
+      assert moved.label_id == label.id
+    end
+  end
+
+  describe "owned_event_channel_ids/1" do
+    test "the channels of the user's events, once each" do
+      owner = user!("U1")
+      a = channel!("C1")
+      b = channel!("C2")
+      c = channel!("C3")
+      times = timed(~U[2026-10-10 14:00:00Z], ~U[2026-10-10 15:00:00Z])
+      event!(owner, times, [a, b])
+      event!(owner, times, [b])
+      event!(user!("U2"), times, [c])
+
+      assert Enum.sort(Calendar.owned_event_channel_ids(owner)) == Enum.sort([a.id, b.id])
+      assert Calendar.owned_event_channel_ids(user!("U3")) == []
     end
   end
 

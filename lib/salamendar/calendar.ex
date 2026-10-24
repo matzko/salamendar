@@ -15,6 +15,8 @@ defmodule Salamendar.Calendar do
   alias Salamendar.Calendar.Event
   alias Salamendar.Channels
   alias Salamendar.Channels.{Channel, Membership}
+  alias Salamendar.Labels
+  alias Salamendar.Labels.Label
   alias Salamendar.Render.Period
   alias Salamendar.Repo
 
@@ -39,6 +41,9 @@ defmodule Salamendar.Calendar do
   and not be archived, and private channels need the owner as a member.
   Problems with the channels are reported on the changeset's `:channels`
   field.
+
+  `label_id`, if given, must be a label the owner can use (see
+  `Salamendar.Labels.usable?/2`); otherwise the error is on `:label_id`.
   """
   @spec create_event(User.t(), map(), [Channel.t()]) ::
           {:ok, Event.t(), affected_channel_ids()} | {:error, Ecto.Changeset.t()}
@@ -47,6 +52,7 @@ defmodule Salamendar.Calendar do
       %Event{slack_team_id: owner.slack_team_id, owner_id: owner.id, channels: []}
       |> Event.changeset(attrs)
       |> put_channels(owner, channels)
+      |> validate_label(owner)
 
     with {:ok, event} <- Repo.insert(changeset) do
       {:ok, event, channel_ids(event)}
@@ -59,8 +65,10 @@ defmodule Salamendar.Calendar do
 
   Channels being added follow the rules in `create_event/3`. Channels the
   event already has can stay even if they've since been disabled or
-  archived, and removing a channel needs no checks. The affected channels
-  are those the event was in before and those it's in now.
+  archived, and removing a channel needs no checks. Likewise, a label being
+  set must be one the owner can use, but the event's current label can
+  stay. The affected channels are those the event was in before and those
+  it's in now.
   """
   @spec update_event(User.t(), Event.t(), map(), [Channel.t()]) ::
           {:ok, Event.t(), affected_channel_ids()}
@@ -70,7 +78,11 @@ defmodule Salamendar.Calendar do
       with {:ok, event} <- lock_owned_event(user, event),
            before = channel_ids(event),
            {:ok, event} <-
-             event |> Event.changeset(attrs) |> put_channels(user, channels) |> Repo.update() do
+             event
+             |> Event.changeset(attrs)
+             |> put_channels(user, channels)
+             |> validate_label(user)
+             |> Repo.update() do
         {:ok, {event, Enum.uniq(before ++ channel_ids(event))}}
       end
     end)
@@ -160,6 +172,34 @@ defmodule Salamendar.Calendar do
       true ->
         changeset
     end
+  end
+
+  # Checks a label being set. A label deleted meanwhile is caught by the
+  # foreign key constraint instead.
+  defp validate_label(changeset, owner) do
+    with label_id when not is_nil(label_id) <- get_change(changeset, :label_id),
+         %Label{} = label <- Repo.get(Label, label_id),
+         true <- Labels.usable?(owner, label) do
+      changeset
+    else
+      nil -> changeset
+      _ -> add_error(changeset, :label_id, "is not a label you can use")
+    end
+  end
+
+  @doc """
+  The channels of `user`'s own events, wherever they are.
+  """
+  @spec owned_event_channel_ids(User.t()) :: [Ecto.UUID.t()]
+  def owned_event_channel_ids(%User{} = user) do
+    from(ec in "event_channels",
+      join: e in Event,
+      on: e.id == ec.event_id,
+      where: e.owner_id == ^user.id,
+      distinct: true,
+      select: type(ec.channel_id, Ecto.UUID)
+    )
+    |> Repo.all()
   end
 
   @typedoc """
