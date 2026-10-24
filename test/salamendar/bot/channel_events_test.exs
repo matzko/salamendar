@@ -3,6 +3,7 @@ defmodule Salamendar.Bot.ChannelEventsTest do
   use Oban.Testing, repo: Salamendar.Repo
 
   alias Salamendar.{Accounts, Bot, Channels}
+  alias Salamendar.Calendar.Changes
   alias Salamendar.Channels.Channel
 
   @bot %Slack.Bot{
@@ -68,6 +69,7 @@ defmodule Salamendar.Bot.ChannelEventsTest do
   for type <- ["channel_left", "group_left"] do
     test "#{type} (the bot was removed) disables the calendar", %{channel: channel, user: user} do
       :ok = Channels.add_member(channel, user)
+      :ok = Changes.subscribe(user)
 
       Bot.handle_event(
         unquote(type),
@@ -77,6 +79,7 @@ defmodule Salamendar.Bot.ChannelEventsTest do
 
       refute Repo.reload!(channel).calendar_enabled
       refute Channels.member?(channel, user)
+      assert_receive :calendar_changed
     end
   end
 
@@ -86,7 +89,10 @@ defmodule Salamendar.Bot.ChannelEventsTest do
   end
 
   for prefix <- ["channel", "group"] do
-    test "#{prefix} rename, archive, unarchive and delete", %{channel: channel} do
+    test "#{prefix} rename, archive, unarchive and delete", %{channel: channel, user: user} do
+      :ok = Channels.add_member(channel, user)
+      :ok = Changes.subscribe(user)
+
       Bot.handle_event(
         "#{unquote(prefix)}_rename",
         %{"channel" => %{"id" => "C1", "name" => "renamed", "created" => 1_700_000_000}},
@@ -94,9 +100,11 @@ defmodule Salamendar.Bot.ChannelEventsTest do
       )
 
       assert Repo.reload!(channel).name == "renamed"
+      refute_received :calendar_changed
 
       Bot.handle_event("#{unquote(prefix)}_archive", %{"channel" => "C1", "user" => "U1"}, @bot)
       assert %DateTime{} = Repo.reload!(channel).archived_at
+      assert_receive :calendar_changed
 
       Bot.handle_event("#{unquote(prefix)}_unarchive", %{"channel" => "C1", "user" => "U1"}, @bot)
       assert is_nil(Repo.reload!(channel).archived_at)

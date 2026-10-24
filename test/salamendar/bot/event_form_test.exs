@@ -5,7 +5,7 @@ defmodule Salamendar.Bot.EventFormTest do
   import Mox
 
   alias Salamendar.{Accounts, Bot, Calendar, Channels}
-  alias Salamendar.Calendar.Event
+  alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.SlackAPI.Mock
   alias Salamendar.Workers.PublishHome
 
@@ -236,6 +236,8 @@ defmodule Salamendar.Bot.EventFormTest do
 
   describe "submitting the form" do
     test "creates a timed event and schedules the updates", %{user: user, general: general} do
+      :ok = Changes.subscribe(user)
+
       assert :ok =
                submit(
                  form_values(
@@ -254,6 +256,7 @@ defmodule Salamendar.Bot.EventFormTest do
       assert event.time_zone == "America/Chicago"
       assert is_nil(event.description)
 
+      assert_receive :calendar_changed
       assert_enqueued(worker: PublishHome, args: %{team_id: "TEF1", slack_user_id: "U1"})
     end
 
@@ -276,7 +279,9 @@ defmodule Salamendar.Bot.EventFormTest do
       assert is_nil(event.starts_at)
     end
 
-    test "shows changeset errors next to their fields", %{general: general} do
+    test "shows changeset errors next to their fields", %{user: user, general: general} do
+      :ok = Changes.subscribe(user)
+
       assert {:ack, %{response_action: "errors", errors: errors}} =
                submit(
                  form_values(
@@ -300,12 +305,18 @@ defmodule Salamendar.Bot.EventFormTest do
                )
 
       assert Repo.aggregate(Event, :count) == 0
+      refute_received :calendar_changed
       refute_enqueued(worker: PublishHome)
     end
 
     test "updates an event, syncing old and new channels",
          %{user: user, general: general, random: random} do
       event = event!(user, [general])
+      # Only in the event's old channel, so only the old channels' topics
+      # reach them.
+      {:ok, watcher} = Accounts.get_or_create_user("TEF1", "U3")
+      :ok = Channels.add_member(general, watcher)
+      :ok = Changes.subscribe(watcher)
 
       assert :ok =
                submit(
@@ -319,6 +330,7 @@ defmodule Salamendar.Bot.EventFormTest do
                )
 
       assert Repo.reload!(event).title == "Moved"
+      assert_receive :calendar_changed
     end
 
     test "only the owner can update", %{user: user, general: general} do
@@ -342,10 +354,12 @@ defmodule Salamendar.Bot.EventFormTest do
   describe "confirming a delete" do
     test "deletes the event and schedules the updates", %{user: user, general: general} do
       event = event!(user, [general])
+      :ok = Changes.subscribe(user)
 
       assert :ok = submit(%{}, callback_id: "delete_event", private_metadata: event.id)
 
       refute Repo.get(Event, event.id)
+      assert_receive :calendar_changed
       assert_enqueued(worker: PublishHome, args: %{slack_user_id: "U1"})
     end
 

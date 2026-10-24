@@ -6,9 +6,13 @@ defmodule Salamendar.Handlers.ChannelEvents do
   Events for channels Salamendar doesn't know, or that don't have the
   calendar enabled, are ignored: membership is only kept for calendar
   channels.
+
+  Turning a calendar off and archiving a channel hide its events, so they
+  tell open web calendars to refetch.
   """
 
   alias Salamendar.{Accounts, Channels}
+  alias Salamendar.Calendar.Changes
   alias Salamendar.Channels.Channel
 
   @type bot :: %{team_id: String.t(), user_id: String.t()}
@@ -62,8 +66,8 @@ defmodule Salamendar.Handlers.ChannelEvents do
   """
   @spec disable(Channel.t()) :: :ok
   def disable(%Channel{} = channel) do
-    {:ok, _channel} = Channels.disable_calendar(channel)
-    :ok
+    {:ok, channel} = Channels.disable_calendar(channel)
+    Changes.broadcast([channel.id], nil)
   end
 
   @doc """
@@ -79,7 +83,7 @@ defmodule Salamendar.Handlers.ChannelEvents do
   """
   @spec archived(bot(), map()) :: :ok
   def archived(bot, %{"channel" => channel_id}),
-    do: with_channel(bot, channel_id, &Channels.archive_channel/1)
+    do: with_channel(bot, channel_id, &archive/1)
 
   @doc """
   `channel_unarchive`/`group_unarchive`.
@@ -95,6 +99,11 @@ defmodule Salamendar.Handlers.ChannelEvents do
   @spec deleted(bot(), map()) :: :ok
   def deleted(bot, %{"channel" => channel_id}),
     do: with_channel(bot, channel_id, &Channels.delete_channel/1)
+
+  defp archive(channel) do
+    {:ok, channel} = Channels.archive_channel(channel)
+    Changes.broadcast([channel.id], nil)
+  end
 
   defp with_channel(bot, channel_id, fun) do
     with %Channel{} = channel <- Channels.get_channel(bot.team_id, channel_id), do: fun.(channel)

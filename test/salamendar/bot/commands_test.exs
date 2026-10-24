@@ -4,7 +4,8 @@ defmodule Salamendar.Bot.CommandsTest do
 
   import Mox
 
-  alias Salamendar.{Bot, Channels}
+  alias Salamendar.{Accounts, Bot, Channels}
+  alias Salamendar.Calendar.Changes
   alias Salamendar.SlackAPI.Mock
   alias Salamendar.Workers.ReconcileMembers
   alias SalamendarWeb.SignInLink
@@ -123,12 +124,16 @@ defmodule Salamendar.Bot.CommandsTest do
   describe "disable" do
     test "disables the calendar" do
       channel = enabled_channel!()
+      {:ok, user} = Accounts.get_or_create_user("TCM1", "U9")
+      :ok = Channels.add_member(channel, user)
+      :ok = Changes.subscribe(user)
       expect_reply()
 
       run("disable")
 
       assert_received {:reply, "The calendar is off" <> _}
       refute Repo.reload!(channel).calendar_enabled
+      assert_receive :calendar_changed
     end
 
     test "says so when the calendar isn't on" do

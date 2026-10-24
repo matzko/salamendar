@@ -14,12 +14,12 @@ defmodule Salamendar.Handlers.EventForm do
   Slack's own conversation pickers can't be filtered by our data.
 
   Submissions answer Slack within its 3-second limit: they only touch the
-  database and enqueue a Home tab refresh, and they
-  return `{:ack, …}` with errors to show in the form.
+  database, tell open web calendars to refetch and enqueue a Home tab
+  refresh, and they return `{:ack, …}` with errors to show in the form.
   """
 
   alias Salamendar.{Accounts, Calendar, Channels, Repo, SlackAPI}
-  alias Salamendar.Calendar.Event
+  alias Salamendar.Calendar.{Changes, Event}
   alias Salamendar.Channels.Channel
   alias Salamendar.Render.Period
   alias Salamendar.Workers.PublishHome
@@ -108,8 +108,8 @@ defmodule Salamendar.Handlers.EventForm do
       end
 
     case result do
-      {:ok, _event, _channel_ids} ->
-        after_change(team_id, slack_user_id)
+      {:ok, event, channel_ids} ->
+        after_change(team_id, slack_user_id, event, channel_ids)
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:ack, %{response_action: "errors", errors: form_errors(changeset)}}
@@ -140,8 +140,8 @@ defmodule Salamendar.Handlers.EventForm do
       end
 
     case result do
-      {:ok, _event, _channel_ids} ->
-        after_change(team_id, slack_user_id)
+      {:ok, event, channel_ids} ->
+        after_change(team_id, slack_user_id, event, channel_ids)
 
       {:error, :not_found} ->
         {:ack, update_to_message("This event was already deleted.")}
@@ -151,7 +151,8 @@ defmodule Salamendar.Handlers.EventForm do
     end
   end
 
-  defp after_change(team_id, slack_user_id) do
+  defp after_change(team_id, slack_user_id, event, channel_ids) do
+    :ok = Changes.broadcast(channel_ids, event.owner_id)
     {:ok, _} = PublishHome.enqueue(team_id, slack_user_id)
     :ok
   end
