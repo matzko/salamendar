@@ -7,6 +7,7 @@ defmodule SalamendarWeb.CoreComponents do
   """
   use Phoenix.Component
 
+  alias Phoenix.HTML.Form
   alias Phoenix.LiveView.JS
 
   @doc """
@@ -39,6 +40,182 @@ defmodule SalamendarWeb.CoreComponents do
       <button type="button" class="flash-close" aria-label="close">×</button>
     </div>
     """
+  end
+
+  @doc """
+  Renders a button, or a link styled as one when given `href`, `navigate`
+  or `patch`.
+
+      <.button type="submit" variant="primary">Save</.button>
+      <.button type="button" variant="danger" phx-click="delete">Delete</.button>
+  """
+  attr :variant, :string, values: [nil, "primary", "danger"], default: nil
+  attr :class, :any, default: nil
+  attr :rest, :global, include: ~w(href navigate patch method name value disabled form type)
+  slot :inner_block, required: true
+
+  def button(%{rest: rest} = assigns) do
+    assigns =
+      assign(assigns, :class, [
+        "button",
+        assigns.variant && "button-#{assigns.variant}",
+        assigns.class
+      ])
+
+    if rest[:href] || rest[:navigate] || rest[:patch] do
+      ~H"""
+      <.link class={@class} {@rest}>{render_slot(@inner_block)}</.link>
+      """
+    else
+      ~H"""
+      <button class={@class} {@rest}>{render_slot(@inner_block)}</button>
+      """
+    end
+  end
+
+  @doc """
+  Renders a form input with its label and errors. Errors show only once the
+  field has been used (`Phoenix.Component.used_input?/1`), as in
+  `mix phx.new`.
+
+  Types:
+
+    * `"checkbox"`: a boolean, sent as `"true"` or `"false"`.
+    * `"checkgroup"`: one checkbox per `options` entry (`{label, value}`),
+      sent as a list. An empty hidden value keeps the list present when
+      nothing is checked, so callers should drop `""`.
+    * `"textarea"`.
+    * Anything else is an `<input type=...>`, such as `"text"`, `"date"` or
+      `"datetime-local"`.
+
+      <.input field={@form[:title]} label="Title" />
+      <.input field={@form[:channel_ids]} type="checkgroup" label="Channels" options={@options} />
+  """
+  attr :id, :any, default: nil
+  attr :name, :any
+  attr :label, :string, default: nil
+  attr :value, :any
+
+  attr :type, :string,
+    default: "text",
+    values: ~w(checkbox checkgroup date datetime-local text textarea hidden)
+
+  attr :field, Phoenix.HTML.FormField,
+    doc: "a form field struct retrieved from the form, for example: @form[:title]"
+
+  attr :errors, :list, default: []
+  attr :checked, :boolean, doc: "the checked flag for checkbox inputs"
+  attr :options, :list, default: [], doc: "`{label, value}` pairs for checkgroup inputs"
+
+  attr :rest, :global,
+    include:
+      ~w(autocomplete disabled form max maxlength min placeholder readonly required rows step)
+
+  def input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
+    errors = if used_input?(field), do: field.errors, else: []
+
+    assigns
+    |> assign(field: nil, id: assigns.id || field.id)
+    |> assign(:errors, Enum.map(errors, &translate_error/1))
+    |> assign_new(:name, fn ->
+      if assigns.type == "checkgroup", do: field.name <> "[]", else: field.name
+    end)
+    |> assign_new(:value, fn -> field.value end)
+    |> input()
+  end
+
+  def input(%{type: "hidden"} = assigns) do
+    ~H"""
+    <input type="hidden" id={@id} name={@name} value={@value} {@rest} />
+    """
+  end
+
+  def input(%{type: "checkbox"} = assigns) do
+    assigns =
+      assign_new(assigns, :checked, fn ->
+        Form.normalize_value("checkbox", assigns[:value])
+      end)
+
+    ~H"""
+    <div class="field">
+      <label class="field-check">
+        <input type="hidden" name={@name} value="false" disabled={@rest[:disabled]} />
+        <input type="checkbox" id={@id} name={@name} value="true" checked={@checked} {@rest} />
+        {@label}
+      </label>
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
+
+  def input(%{type: "checkgroup"} = assigns) do
+    assigns = assign(assigns, :selected, assigns.value |> List.wrap() |> Enum.map(&to_string/1))
+
+    ~H"""
+    <fieldset class="field" id={@id}>
+      <legend :if={@label} class="field-label">{@label}</legend>
+      <input type="hidden" name={@name} value="" disabled={@rest[:disabled]} />
+      <label :for={{label, value} <- @options} class="field-check">
+        <input
+          type="checkbox"
+          name={@name}
+          value={value}
+          checked={to_string(value) in @selected}
+          {@rest}
+        />
+        {label}
+      </label>
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </fieldset>
+    """
+  end
+
+  def input(%{type: "textarea"} = assigns) do
+    ~H"""
+    <div class="field">
+      <label :if={@label} for={@id} class="field-label">{@label}</label>
+      <textarea
+        id={@id}
+        name={@name}
+        class={["field-input", @errors != [] && "field-input-error"]}
+        {@rest}
+      >{Form.normalize_value("textarea", @value)}</textarea>
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
+
+  def input(assigns) do
+    ~H"""
+    <div class="field">
+      <label :if={@label} for={@id} class="field-label">{@label}</label>
+      <input
+        type={@type}
+        name={@name}
+        id={@id}
+        value={Form.normalize_value(@type, @value)}
+        class={["field-input", @errors != [] && "field-input-error"]}
+        {@rest}
+      />
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
+
+  defp error(assigns) do
+    ~H"""
+    <p class="field-error">{render_slot(@inner_block)}</p>
+    """
+  end
+
+  @doc """
+  Fills an error message's `%{...}` placeholders from its options.
+  """
+  @spec translate_error({String.t(), keyword()}) :: String.t()
+  def translate_error({msg, opts}) do
+    Enum.reduce(opts, msg, fn {key, value}, acc ->
+      String.replace(acc, "%{#{key}}", fn _ -> to_string(value) end)
+    end)
   end
 
   @doc """
