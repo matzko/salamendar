@@ -36,3 +36,7 @@ config/.env.exs
 
 # Dialyzer PLT files
 /priv/plts/
+
+# Deploy settings that name the domain; see the .example files
+/k8s/config.env
+/cluster/dns.env

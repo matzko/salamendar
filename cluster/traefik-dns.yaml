@@ -1,13 +1,13 @@
 # Not for traffic: external-dns reads it and publishes an A record with the
 # external IP of each node running a Traefik pod. The main zone has a CNAME
-# from PHX_HOST to this name.
+# from PHX_HOST to this name. Apply through envsubst (see dns.env.example).
 apiVersion: v1
 kind: Service
 metadata:
   name: traefik-dns
   namespace: traefik
   annotations:
-    external-dns.kubernetes.io/hostname: salamendar.k8s.example.com
+    external-dns.kubernetes.io/hostname: salamendar.${DNS_ZONE}
     external-dns.kubernetes.io/endpoints-type: NodeExternalIP
     # Short, so a replaced node is reachable again soon.
     external-dns.kubernetes.io/ttl: "60"

@@ -14,12 +14,25 @@ resources:
 # Plain settings for the app and its migrate init container. The Secret
 # `salamendar` holds the rest. The name gets a content hash, so changing a
 # value here rolls the Deployment.
+#
+# `config.env` (git-ignored, see config.env.example) sets PHX_HOST. CI
+# writes it from the PHX_HOST repository variable, so the domain isn't in
+# the repo.
 configMapGenerator:
   - name: salamendar
+    envs: [config.env]
     literals:
-      - PHX_HOST=salamendar.example.com
       - PORT=4000
       - POOL_SIZE=10
+
+# The Ingress serves PHX_HOST and gets its certificate for it.
+replacements:
+  - source: { kind: ConfigMap, name: salamendar, fieldPath: data.PHX_HOST }
+    targets:
+      - select: { kind: Ingress, name: salamendar }
+        fieldPaths:
+          - spec.rules.0.host
+          - spec.tls.0.hosts.0
 
 # CI sets the tag to the commit SHA with `kustomize edit set image` before
 # applying. Applying without that fails to pull, on purpose.

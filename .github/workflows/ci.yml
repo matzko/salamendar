@@ -92,6 +92,8 @@ jobs:
         -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
     steps:
       - uses: actions/checkout@v7
+      # Any valid host will do for a schema check.
+      - run: cp k8s/config.env.example k8s/config.env
       - run: kubectl kustomize k8s | $KUBECONFORM -
       - run: >-
           $KUBECONFORM cluster/namespace.yaml cluster/cluster-issuer.yaml

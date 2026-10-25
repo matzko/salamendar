@@ -1,4 +1,5 @@
-# The host is PHX_HOST (in kustomization.yaml), the name browsers send.
+# Both hosts are replaced with PHX_HOST (see kustomization.yaml), the name
+# browsers send.
 # DNS reaches the node through a CNAME to the external-dns record; the
 # HTTP-01 challenge follows it too.
 apiVersion: networking.k8s.io/v1
@@ -10,10 +11,10 @@ metadata:
 spec:
   ingressClassName: traefik
   tls:
-    - hosts: [salamendar.example.com]
+    - hosts: [set-from-phx-host]
       secretName: salamendar-tls
   rules:
-    - host: salamendar.example.com
+    - host: set-from-phx-host
       http:
         paths:
           - path: /
