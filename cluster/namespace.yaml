@@ -1,0 +1,5 @@
+# Made by hand, once. CI's deployer can't create namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: salamendar

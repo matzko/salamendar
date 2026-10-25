@@ -1,0 +1,24 @@
+# The host is PHX_HOST (in kustomization.yaml), the name browsers send.
+# DNS reaches the node through a CNAME to the external-dns record; the
+# HTTP-01 challenge follows it too.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: salamendar
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [salamendar.example.com]
+      secretName: salamendar-tls
+  rules:
+    - host: salamendar.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: salamendar
+                port: { name: http }

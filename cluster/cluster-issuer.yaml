@@ -1,0 +1,16 @@
+# Let's Encrypt certificates for any Ingress annotated with
+# `cert-manager.io/cluster-issuer: letsencrypt`. No email: Let's Encrypt no
+# longer sends expiry notices, and cert-manager renews on its own.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-account
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

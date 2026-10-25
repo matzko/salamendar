@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: salamendar
+spec:
+  selector:
+    app: salamendar
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salamendar
+spec:
+  # One replica: LiveView updates go through PubSub, which only reaches
+  # other pods once the nodes are clustered.
+  replicas: 1
+  # Start the new pod before stopping the old one. Slack allows both
+  # Socket Mode connections for the overlap.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: salamendar
+  template:
+    metadata:
+      labels:
+        app: salamendar
+    spec:
+      securityContext:
+        # `nobody` in the image. The kubelet can only check runAsNonRoot
+        # against a numeric user.
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      # Runs while the old pod still serves, so migrations must work with
+      # the code that's already running.
+      initContainers:
+        - name: migrate
+          image: salamendar
+          command: ["/app/bin/migrate"]
+          envFrom:
+            - configMapRef: { name: salamendar }
+            - secretRef: { name: salamendar }
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+      containers:
+        - name: salamendar
+          image: salamendar
+          # SECRET_KEY_BASE, DATABASE_URL, SLACK_BOT_TOKEN, SLACK_APP_TOKEN
+          # and RELEASE_COOKIE come from the Secret. The image is public, so
+          # the cookie it was built with is too.
+          envFrom:
+            - configMapRef: { name: salamendar }
+            - secretRef: { name: salamendar }
+          ports:
+            - name: http
+              containerPort: 4000
+          # Boot includes Slack's `auth.test`; allow up to a minute.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          # No CPU limit: throttling makes the BEAM's schedulers stall.
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }

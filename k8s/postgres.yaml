@@ -1,0 +1,68 @@
+# Only reachable inside the cluster, as postgres.salamendar.svc.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18
+          # Small enough for a 2GB node; see "Sizing" in docs/deploy-plan.md.
+          args: ["-c", "shared_buffers=64MB"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: postgres, key: username }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgres, key: password }
+            - name: POSTGRES_DB
+              value: salamendar
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$POSTGRES_USER" -d salamendar']
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            # Postgres 18+ images keep data under a versioned subdirectory
+            # of /var/lib/postgresql, so mount the parent (as compose.yaml
+            # does).
+            - name: data
+              mountPath: /var/lib/postgresql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        # "retain" keeps the Linode volume if the PVC is deleted.
+        storageClassName: linode-block-storage-retain
+        resources:
+          requests:
+            storage: 10Gi

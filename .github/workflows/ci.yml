@@ -79,6 +79,25 @@ jobs:
       - run: mix credo --strict
       - run: mix dialyzer --format github
 
+  # Checks the Kubernetes manifests against the API schemas (CRDs, like
+  # cert-manager's ClusterIssuer, from the datreeio catalog).
+  # traefik-values.yaml is Helm values, not a manifest.
+  manifests:
+    runs-on: ubuntu-24.04
+    env:
+      KUBECONFORM: >-
+        docker run --rm -i -v ${{ github.workspace }}:/w -w /w
+        ghcr.io/yannh/kubeconform:v0.8.0 -strict -summary
+        -schema-location default
+        -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+    steps:
+      - uses: actions/checkout@v7
+      - run: kubectl kustomize k8s | $KUBECONFORM -
+      - run: >-
+          $KUBECONFORM cluster/namespace.yaml cluster/cluster-issuer.yaml
+          cluster/traefik-dns.yaml cluster/external-dns.yaml
+          cluster/deployer-rbac.yaml
+
   # Catches a broken Dockerfile on the PR rather than at deploy time.
   docker:
     runs-on: ubuntu-24.04

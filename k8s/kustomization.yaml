@@ -1,0 +1,29 @@
+# Everything CI applies on deploy (`kubectl apply -k k8s`). Cluster-wide
+# pieces, the namespace and the Secrets are made by hand; see `cluster/`
+# and docs/deploy.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: salamendar
+
+resources:
+  - postgres.yaml
+  - app.yaml
+  - ingress.yaml
+
+# Plain settings for the app and its migrate init container. The Secret
+# `salamendar` holds the rest. The name gets a content hash, so changing a
+# value here rolls the Deployment.
+configMapGenerator:
+  - name: salamendar
+    literals:
+      - PHX_HOST=salamendar.example.com
+      - PORT=4000
+      - POOL_SIZE=10
+
+# CI sets the tag to the commit SHA with `kustomize edit set image` before
+# applying. Applying without that fails to pull, on purpose.
+images:
+  - name: salamendar
+    newName: ghcr.io/matzko/salamendar
+    newTag: set-by-ci
