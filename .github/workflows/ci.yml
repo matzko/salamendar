@@ -1,0 +1,93 @@
+# Tests, lint and a Docker build on every PR and every push to main.
+# Branch protection on main requires these jobs, so a merge means tested.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to a PR replaces its running checks. Pushes to main run in
+# full, one after another.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: test
+    services:
+      # Matches compose.yaml and the credentials in config/test.exs.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: mix-test-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: mix-test-${{ runner.os }}-
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: mix-dev-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: mix-dev-${{ runner.os }}-
+      # Building PLTs takes minutes; the core ones only change with the
+      # toolchain, so a partial restore still saves most of it.
+      - uses: actions/cache@v6
+        with:
+          path: priv/plts
+          key: plts-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: plts-${{ runner.os }}-
+      - run: mix deps.get
+      - run: mix deps.unlock --check-unused
+      - run: mix format --check-formatted
+      - run: mix credo --strict
+      - run: mix dialyzer --format github
+
+  # Catches a broken Dockerfile on the PR rather than at deploy time.
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
