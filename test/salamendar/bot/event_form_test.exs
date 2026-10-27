@@ -283,6 +283,22 @@ defmodule Salamendar.Bot.EventFormTest do
       assert_enqueued(worker: PublishHome, args: %{team_id: "TEF1", slack_user_id: "U1"})
     end
 
+    test "saves shortcodes typed in Slack as emoji", %{general: general} do
+      assert :ok =
+               submit(
+                 form_values(
+                   title: "Launch :rocket:",
+                   start: ~U[2026-10-14 18:00:00Z],
+                   end: ~U[2026-10-14 19:00:00Z],
+                   channel_ids: [general.id],
+                   description: "Bring :pizza: and :custom_party:"
+                 )
+               )
+
+      assert [%Event{title: "Launch 🚀", description: "Bring 🍕 and :custom_party:"}] =
+               Repo.all(Event)
+    end
+
     test "creates an all-day event from the pickers' local dates", %{general: general} do
       # Oct 20 23:30 to Oct 22 01:00 in Chicago: Oct 20–22 inclusive.
       assert :ok =
