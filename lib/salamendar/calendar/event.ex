@@ -12,6 +12,7 @@ defmodule Salamendar.Calendar.Event do
 
   alias Salamendar.Accounts.User
   alias Salamendar.Channels.Channel
+  alias Salamendar.Emoji
   alias Salamendar.Labels.Label
   alias Salamendar.TimeZones
 
@@ -39,7 +40,8 @@ defmodule Salamendar.Calendar.Event do
 
   @doc """
   Casts the user-editable fields. `slack_team_id` and `owner_id` are set on
-  the struct by the caller.
+  the struct by the caller. `:name:` shortcodes in a changed title or
+  description become emoji (see `Salamendar.Emoji.replace_shortcodes/1`).
   """
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(event, attrs) do
@@ -55,8 +57,11 @@ defmodule Salamendar.Calendar.Event do
       :time_zone,
       :label_id
     ])
+    |> update_change(:title, &Emoji.replace_shortcodes/1)
+    |> update_change(:description, &Emoji.replace_shortcodes/1)
     |> validate_required([:slack_team_id, :title, :time_zone])
-    |> validate_length(:title, max: @title_max_length)
+    # Code points, as Postgres counts them for varchar(255): ❤️ is two.
+    |> validate_length(:title, max: @title_max_length, count: :codepoints)
     |> TimeZones.validate(:time_zone)
     |> validate_time_shape()
     |> assoc_constraint(:owner)

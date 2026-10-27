@@ -45,6 +45,11 @@ defmodule Salamendar.Labels.LabelTest do
       assert changeset.valid?
       assert get_change(changeset, :name) == "On call"
 
+      changeset =
+        Label.changeset(%Label{slack_team_id: "TLA1"}, %{name: ":pager: On call", color: "red"})
+
+      assert get_change(changeset, :name) == "📟 On call"
+
       assert %{name: ["can't be blank"], color: ["can't be blank"]} =
                errors_on(Label.changeset(%Label{slack_team_id: "TLA1"}, %{name: "  "}))
     end
@@ -57,6 +62,17 @@ defmodule Salamendar.Labels.LabelTest do
         })
 
       assert %{name: ["should be at most 50 character(s)"]} = errors_on(changeset)
+    end
+
+    test "limits the name to the column's 255 code points" do
+      # 40 families of four: 40 characters, 280 code points.
+      changeset =
+        Label.changeset(%Label{slack_team_id: "TLA1"}, %{
+          name: String.duplicate("👨‍👩‍👧‍👦", 40),
+          color: "red"
+        })
+
+      assert %{name: ["should be at most 255 character(s)"]} = errors_on(changeset)
     end
 
     test "rejects an unknown color, as does the CHECK" do

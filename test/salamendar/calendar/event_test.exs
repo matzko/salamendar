@@ -31,6 +31,29 @@ defmodule Salamendar.Calendar.EventTest do
       assert changeset(@all_day).valid?
     end
 
+    test "turns shortcodes in the title and description into emoji" do
+      changeset = changeset(%{@timed | title: "Party :tada:"} |> Map.put(:description, ":cake:"))
+      assert get_change(changeset, :title) == "Party 🎉"
+      assert get_change(changeset, :description) == "🍰"
+    end
+
+    test "checks the title's length after the shortcodes become emoji" do
+      assert changeset(%{@timed | title: String.duplicate(":tada:", 255)}).valid?
+      refute changeset(%{@timed | title: String.duplicate("x", 256)}).valid?
+    end
+
+    test "counts the title's length in code points, as the column does" do
+      # ❤️ is two code points.
+      refute changeset(%{@timed | title: String.duplicate("❤️", 128)}).valid?
+      assert changeset(%{@timed | title: String.duplicate("❤️", 127)}).valid?
+    end
+
+    test "leaves unchanged text alone" do
+      event = %Event{slack_team_id: "TE1", title: "Old :tada:"}
+      changeset = Event.changeset(event, Map.delete(@timed, :title))
+      assert get_field(changeset, :title) == "Old :tada:"
+    end
+
     test "rejects dates on a timed event" do
       changeset = changeset(Map.put(@timed, :start_date, ~D[2026-10-10]))
       assert %{start_date: ["must be blank for timed events"]} = errors_on(changeset)
