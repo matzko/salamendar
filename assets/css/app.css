@@ -452,11 +452,12 @@ textarea.field-input {
   opacity: 1;
 }
 
+/* Under the button, at most Slack's picker's width. */
 .emoji-popup {
   position: absolute;
   top: 100%;
-  left: 0;
   right: 0;
+  width: min(100%, 24rem);
   z-index: 40;
   margin-top: 0.25rem;
   border: 1px solid var(--border);
@@ -467,6 +468,132 @@ textarea.field-input {
 
 .emoji-popup[hidden] {
   display: none;
+}
+
+/* The picker (assets/js/hooks/emoji_input.js) */
+
+.emoji-search {
+  display: block;
+  width: calc(100% - 1rem);
+  margin: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.emoji-tabs {
+  display: flex;
+  gap: 0.125rem;
+  padding: 0 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.emoji-tabs[hidden] {
+  display: none;
+}
+
+.emoji-tab {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.emoji-tab:hover,
+.emoji-tab[aria-pressed="true"] {
+  opacity: 1;
+}
+
+.emoji-tab[aria-pressed="true"] {
+  border-bottom-color: var(--accent);
+}
+
+.emoji-grid {
+  position: relative;
+  height: 14rem;
+  padding: 0 0.5rem 0.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.emoji-section[hidden],
+.emoji-section-off,
+.emoji-empty[hidden] {
+  display: none;
+}
+
+.emoji-section-title {
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: 0.375rem 0 0.25rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.emoji-results .emoji-options {
+  padding-top: 0.5rem;
+}
+
+.emoji-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+}
+
+.emoji-option {
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emoji-option:hover,
+.emoji-option:focus-visible {
+  background: var(--border);
+  outline: none;
+}
+
+.emoji-empty {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.emoji-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.emoji-preview-char {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.emoji-preview-name {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field-error {
