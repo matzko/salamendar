@@ -1,6 +1,6 @@
 # Everything CI applies on deploy (`kubectl apply -k k8s`). Cluster-wide
-# pieces, the namespace and the Secrets are made by hand; see `cluster/`
-# and docs/deploy.md.
+# pieces, the namespace and the Secrets are made by hand; see
+# `cluster/README.md`.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

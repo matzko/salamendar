@@ -1,6 +1,6 @@
 # What CI deploys with: enough to `kubectl apply -k k8s` and watch the
 # rollout, in the salamendar namespace only. Build CI's kubeconfig from the
-# token Secret below (see docs/deploy.md).
+# token Secret below (see cluster/README.md).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

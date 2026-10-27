@@ -183,3 +183,221 @@ kubectl -n external-dns logs deploy/external-dns
 dig +short @$DNS_SERVER salamendar.$DNS_ZONE
 dig +short $PHX_HOST
 ```
+
+## 6. The Slack tokens
+
+Prod uses the existing Slack app. From https://api.slack.com/apps:
+
+- `SLACK_BOT_TOKEN` (`xoxb-`): **OAuth & Permissions → Bot User OAuth
+  Token**.
+- `SLACK_APP_TOKEN` (`xapp-`): **Basic Information → App-Level Tokens**,
+  with the `connections:write` scope.
+
+Once prod is up, don't `just run` with these. Both would hold Socket Mode
+connections, and Slack would split events between them.
+
+## 7. The namespace and the app's Secrets
+
+```sh
+kubectl apply -f cluster/namespace.yaml
+```
+
+Run this in a real terminal: `read -s` needs a TTY. The values go to
+kubectl through `<(printf …)` (`printf` is a builtin), so they stay out of
+shell history and the process list. The password is hex, so it needs no
+escaping in `DATABASE_URL`.
+
+```sh
+db_pass=$(openssl rand -hex 24)
+read -rsp 'SLACK_BOT_TOKEN: ' slack_bot_token; echo
+read -rsp 'SLACK_APP_TOKEN: ' slack_app_token; echo
+
+kubectl -n salamendar create secret generic postgres \
+  --from-file=username=<(printf %s salamendar) \
+  --from-file=password=<(printf %s "$db_pass")
+
+kubectl -n salamendar create secret generic salamendar \
+  --from-file=SECRET_KEY_BASE=<(printf %s "$(openssl rand -base64 48 | tr -d '\n')") \
+  --from-file=DATABASE_URL=<(printf %s "ecto://salamendar:$db_pass@postgres.salamendar.svc/salamendar") \
+  --from-file=SLACK_BOT_TOKEN=<(printf %s "$slack_bot_token") \
+  --from-file=SLACK_APP_TOKEN=<(printf %s "$slack_app_token") \
+  --from-file=RELEASE_COOKIE=<(printf %s "$(openssl rand -hex 32)")
+
+unset db_pass slack_bot_token slack_app_token
+```
+
+Nothing else keeps these values. To check the keys without printing them:
+`kubectl -n salamendar describe secret postgres salamendar`.
+
+## 8. CI's deployer
+
+```sh
+kubectl apply -f cluster/deployer-rbac.yaml
+```
+
+Check what it can do. It should be `yes` for the first two and `no` for
+the rest:
+
+```sh
+as=system:serviceaccount:salamendar:deployer
+kubectl auth can-i patch deployments -n salamendar --as=$as
+kubectl auth can-i get pods/log -n salamendar --as=$as
+kubectl auth can-i get secrets -n salamendar --as=$as
+kubectl auth can-i delete deployments -n salamendar --as=$as
+kubectl auth can-i patch deployments -n traefik --as=$as
+kubectl apply -k k8s --dry-run=server --as=$as
+```
+
+Build a kubeconfig from its token, in a temp dir that's removed afterwards,
+and store it as the `KUBECONFIG` secret of a `production` GitHub
+Environment. The Environment only allows `main`, so no other branch's
+workflow can read it.
+
+```sh
+repo=matzko/salamendar
+dir=$(mktemp -d); chmod 700 "$dir"; cfg=$dir/kubeconfig
+server=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+ca=$(kubectl -n salamendar get secret deployer-token -o jsonpath='{.data.ca\.crt}')
+token=$(kubectl -n salamendar get secret deployer-token -o jsonpath='{.data.token}' | base64 -d)
+
+(umask 077; cat > "$cfg" <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+  - name: salamendar
+    cluster: { server: $server, certificate-authority-data: $ca }
+users:
+  - name: deployer
+    user: { token: $token }
+contexts:
+  - name: deployer
+    context: { cluster: salamendar, user: deployer, namespace: salamendar }
+current-context: deployer
+EOF
+)
+unset token
+KUBECONFIG=$cfg kubectl auth whoami
+
+gh api -X PUT repos/$repo/environments/production --silent \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
+gh api -X POST repos/$repo/environments/production/deployment-branch-policies \
+  --silent -f name=main -f type=branch
+gh secret set KUBECONFIG --repo $repo --env production < "$cfg"
+rm -rf "$dir"
+```
+
+To rotate the token, delete the `deployer-token` Secret, apply
+`deployer-rbac.yaml` again, and redo the above.
+
+Protect `main`, so that merged means tested: every change goes through a
+PR, CI's four jobs must pass on a branch that's up to date, and that holds
+for admins too. `app_id` 15368 is GitHub Actions.
+
+```sh
+gh api -X PUT repos/matzko/salamendar/branches/main/protection --input - <<'EOF'
+{
+  "required_status_checks": {
+    "strict": true,
+    "checks": [
+      {"context": "test", "app_id": 15368},
+      {"context": "lint", "app_id": 15368},
+      {"context": "manifests", "app_id": 15368},
+      {"context": "docker", "app_id": 15368}
+    ]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {"required_approving_review_count": 0},
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+EOF
+```
+
+## 9. The `PHX_HOST` variable
+
+CI writes `k8s/config.env` from it.
+
+```sh
+gh variable set PHX_HOST --body "$PHX_HOST"
+```
+
+## 10. The first deploy
+
+Images go to GHCR (`ghcr.io/matzko/salamendar`), tagged with the commit
+SHA. GHCR has no site of its own: packages show under the GitHub account
+and, once linked, on the repo. The Dockerfile's
+`org.opencontainers.image.source` label links the package to the repo on
+its first push, so CI's `GITHUB_TOKEN` can push to it later.
+
+Log Docker in with `gh`'s token, which needs the `write:packages` scope:
+
+```sh
+gh auth refresh -s write:packages
+gh auth token | docker login ghcr.io -u matzko --password-stdin
+```
+
+Build and push from a commit that's on `main`:
+
+```sh
+sha=$(git rev-parse HEAD)
+docker build -t ghcr.io/matzko/salamendar:$sha .
+docker push ghcr.io/matzko/salamendar:$sha
+```
+
+The first push makes a private package, which the cluster can't pull (there
+are no `imagePullSecrets`). Make it public, once, at
+https://github.com/users/matzko/packages/container/salamendar/settings
+(**Danger Zone → Change visibility**). The image holds only the release:
+`.dockerignore` keeps `.env` and `config/.env.exs` out of the build.
+
+Deploy it. `kustomize edit` rewrites `kustomization.yaml`, so check it out
+again afterwards.
+
+```sh
+(cd k8s && kustomize edit set image salamendar=ghcr.io/matzko/salamendar:$sha)
+kubectl apply -k k8s
+git checkout k8s/kustomization.yaml
+
+kubectl -n salamendar rollout status statefulset/postgres --timeout=5m
+kubectl -n salamendar rollout status deploy/salamendar --timeout=5m
+kubectl -n salamendar wait certificate --all --for=condition=Ready --timeout=5m
+curl -sI https://$PHX_HOST/healthz
+```
+
+On a first boot the `migrate` init container fails a time or two with
+`nxdomain` for `postgres.salamendar.svc`: a headless Service has no DNS
+record until its pod is ready. Kubernetes retries it, and it goes through
+once Postgres is up. The same happens whenever both pods start together,
+such as after a node replacement.
+
+Then sign in to the calendar from a link the bot sends.
+
+## 11. metrics-server
+
+For `kubectl top`. LKE doesn't install it. The chart asks for 100m CPU and
+200Mi by default, but it uses a few millicores and about 15Mi, and CPU
+requests are what's tight on one node.
+
+```sh
+helm install metrics-server metrics-server \
+  --repo https://kubernetes-sigs.github.io/metrics-server --version 3.14.0 \
+  --namespace kube-system \
+  --set resources.requests.cpu=20m --set resources.requests.memory=64Mi \
+  --set resources.limits.memory=128Mi
+kubectl top pods -A --sort-by=memory
+```
+
+It doesn't need `--kubelet-insecure-tls`, despite older LKE advice. LKE's
+kubelet serving certs are signed by the cluster CA and list the node's
+IPs. If an upgrade changes that, its logs will show `x509` errors.
+
+`kubectl top node` can show memory over 100%. It compares the whole node's
+working set (the OS, kubelet and containerd too) with allocatable, which
+already leaves those out. For what's really free:
+
+```sh
+kubectl get --raw /api/v1/nodes/$(kubectl get nodes -o name | cut -d/ -f2)/proxy/stats/summary \
+  | jq '.node.memory.availableBytes / 1048576 | floor'
+```

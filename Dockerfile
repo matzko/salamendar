@@ -76,6 +76,9 @@ RUN mix release
 # the compiled release and other runtime necessities
 FROM ${RUNNER_IMAGE} AS final
 
+# Links the GHCR package to the repo, so the repo's Actions can push to it
+LABEL org.opencontainers.image.source=https://github.com/matzko/salamendar
+
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates \
   && rm -rf /var/lib/apt/lists/*
