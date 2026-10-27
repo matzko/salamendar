@@ -401,3 +401,39 @@ already leaves those out. For what's really free:
 kubectl get --raw /api/v1/nodes/$(kubectl get nodes -o name | cut -d/ -f2)/proxy/stats/summary \
   | jq '.node.memory.availableBytes / 1048576 | floor'
 ```
+
+## 12. Deploys and rollbacks
+
+After the first deploy, every push to `main` deploys itself. The `docker`
+job in `.github/workflows/ci.yml` pushes `ghcr.io/matzko/salamendar:<sha>`.
+Once `test`, `lint`, `manifests` and `docker` pass, the `deploy` job applies
+`k8s/` with that tag and waits for the rollout.
+
+For CI's `GITHUB_TOKEN` to push, the package must grant the repo write
+access. Check **Manage Actions access** at
+https://github.com/users/matzko/packages/container/salamendar/settings and
+add `matzko/salamendar` with the **Write** role if it isn't listed.
+
+Each new pod's `migrate` init container runs the pending migrations before
+the app starts, while the old pod keeps serving. If the migrations or the
+new app fail, the old pod stays up (`maxUnavailable: 0`), `rollout status`
+times out after 5 minutes, and the job fails with the pods' state and the
+`migrate` logs. The cluster keeps retrying the new pod until a fix is
+merged or the rollout is undone.
+
+To roll back, either undo the rollout or re-run an older successful
+`deploy` job (its image is still on GHCR):
+
+```sh
+kubectl -n salamendar rollout undo deploy/salamendar
+```
+
+A rollback doesn't undo migrations: the old code runs against the new
+schema, so keep migrations backward compatible. To undo one, run its
+`down` from the new image, before rolling the code back (`exec` needs
+your admin kubeconfig; CI's deployer can't):
+
+```sh
+kubectl -n salamendar exec deploy/salamendar -c salamendar -- \
+  /app/bin/salamendar eval 'Salamendar.Release.rollback(Salamendar.Repo, <version>)'
+```
