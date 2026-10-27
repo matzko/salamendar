@@ -59,6 +59,15 @@ update-event-calendar version:
         curl -fsSL -o priv/static/vendor/$f https://cdn.jsdelivr.net/npm/@event-calendar/build@{{version}}/dist/$f; \
     done
 
+# Regenerate priv/static/vendor/emoji.json from iamcal's data: just update-emoji 16.0.0
+update-emoji version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp=$(mktemp)
+    trap 'rm -f "$tmp"' EXIT
+    curl -fsSL -o "$tmp" https://cdn.jsdelivr.net/npm/emoji-datasource@{{version}}/emoji.json
+    {{mix}} salamendar.gen.emoji "$tmp"
+
 # Format check, Credo, and Dialyzer
 lint:
     {{mix}} format --check-formatted
