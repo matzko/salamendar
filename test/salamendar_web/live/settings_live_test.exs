@@ -108,6 +108,10 @@ defmodule SalamendarWeb.SettingsLiveTest do
     test "adds labels in both scopes", %{conn: conn, viewer: viewer} do
       {:ok, view, _html} = live(conn, ~p"/settings")
 
+      for scope <- ~w(shared personal) do
+        assert has_element?(view, "#new-#{scope}_name-emoji[phx-hook=EmojiInput]")
+      end
+
       view
       |> form("#new-shared", %{label: %{name: "Holiday", color: "green"}})
       |> render_submit(%{scope: "shared"})
@@ -162,6 +166,7 @@ defmodule SalamendarWeb.SettingsLiveTest do
       {:ok, view, _html} = live(conn, ~p"/settings")
 
       view |> element("#label-#{label.id} button", "Edit") |> render_click()
+      assert has_element?(view, "#edit-label_name-emoji[phx-hook=EmojiInput]")
 
       view
       |> form("#edit-label", %{label: %{name: "Holidays", color: "blue"}})

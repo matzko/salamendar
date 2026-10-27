@@ -584,7 +584,7 @@ defmodule SalamendarWeb.CalendarLive do
       </header>
 
       <.form for={@form} id="event-form" phx-change="validate" phx-submit="save">
-        <.input field={@form[:title]} label="Title" maxlength="255" />
+        <.input field={@form[:title]} label="Title" maxlength="255" emoji />
         <.input field={@form[:all_day]} type="checkbox" label="All day" />
 
         <%= if @all_day? do %>
@@ -625,7 +625,7 @@ defmodule SalamendarWeb.CalendarLive do
           ></span>
         </div>
 
-        <.input field={@form[:description]} type="textarea" label="Description" />
+        <.input field={@form[:description]} type="textarea" label="Description" emoji />
 
         <div class="event-panel-actions">
           <.button type="submit" variant="primary" phx-disable-with="Saving…">Save</.button>
