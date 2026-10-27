@@ -45,6 +45,12 @@ defmodule SalamendarWeb.CoreComponentsTest do
       assert html =~ ~s(aria-label="Insert emoji")
       assert html =~ ~s(aria-controls="event_title-emoji-popup")
       assert html =~ ~s(<div id="event_title-emoji-popup" class="emoji-popup" hidden)
+      assert html =~ ~s(<ul id="event_title-emoji-suggest" class="emoji-suggest" role="listbox")
+
+      assert html =~
+               ~s(role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="event_title-emoji-suggest")
+
+      assert html =~ "ignore_attrs"
       assert html =~ ~s(name="event[title]")
     end
 

@@ -470,6 +470,54 @@ textarea.field-input {
   display: none;
 }
 
+/* `:name` autocomplete, placed by the hook under the line being typed */
+
+.emoji-suggest {
+  position: absolute;
+  z-index: 40;
+  width: max-content;
+  min-width: 12rem;
+  max-width: 100%;
+  max-height: 18rem;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--bg);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+}
+
+.emoji-suggest[hidden] {
+  display: none;
+}
+
+.emoji-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.emoji-suggestion[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.emoji-suggestion-char {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.emoji-suggestion-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The picker (assets/js/hooks/emoji_input.js) */
 
 .emoji-search {
