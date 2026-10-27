@@ -444,6 +444,12 @@ defmodule SalamendarWeb.CalendarLiveTest do
       view |> element("button.add-event") |> render_click()
       assert has_element?(view, "#event-panel-title", "Add event")
       assert has_element?(view, "#event-form input[type=datetime-local]")
+      assert has_element?(view, "#event_title-emoji[phx-hook=EmojiInput] input#event_title")
+
+      assert has_element?(
+               view,
+               "#event_description-emoji[phx-hook=EmojiInput] textarea#event_description"
+             )
 
       view
       |> form("#event-form",

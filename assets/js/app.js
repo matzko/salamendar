@@ -7,13 +7,14 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/salamendar"
 import topbar from "../vendor/topbar"
 import {Calendar} from "./hooks/calendar"
+import {EmojiInput} from "./hooks/emoji_input"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   // The calendar shows times in this zone, so the server reads forms in it.
   params: {_csrf_token: csrfToken, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone},
-  hooks: {...colocatedHooks, Calendar},
+  hooks: {...colocatedHooks, Calendar, EmojiInput},
 })
 
 // Show a progress bar on live navigation and form submits.

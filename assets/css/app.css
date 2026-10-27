@@ -418,6 +418,57 @@ textarea.field-input {
   padding: 0.125rem 0;
 }
 
+/* `<.input emoji>`: the picker button sits inside the input's right edge
+   (a textarea's top right), and the popup opens under the input. */
+
+.field-emoji-control {
+  position: relative;
+}
+
+.field-emoji .field-input {
+  padding-right: 2.25rem;
+}
+
+.field-emoji-button {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.field-emoji-button:hover,
+.field-emoji-button:focus-visible,
+.field-emoji-button[aria-expanded="true"] {
+  background: var(--border);
+  opacity: 1;
+}
+
+.emoji-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin-top: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--bg);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+}
+
+.emoji-popup[hidden] {
+  display: none;
+}
+
 .field-error {
   margin: 0.25rem 0 0;
   color: var(--danger);

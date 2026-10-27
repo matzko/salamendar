@@ -91,7 +91,11 @@ defmodule SalamendarWeb.CoreComponents do
     * Anything else is an `<input type=...>`, such as `"text"`, `"date"` or
       `"datetime-local"`.
 
-      <.input field={@form[:title]} label="Title" />
+  `emoji` adds an emoji picker button and `:name` autocomplete to a text
+  input or textarea (the `EmojiInput` hook in
+  `assets/js/hooks/emoji_input.js`). Other types ignore it.
+
+      <.input field={@form[:title]} label="Title" emoji />
       <.input field={@form[:channel_ids]} type="checkgroup" label="Channels" options={@options} />
   """
   attr :id, :any, default: nil
@@ -114,6 +118,7 @@ defmodule SalamendarWeb.CoreComponents do
     doc: "`{label, value}` pairs for checkgroup and select inputs"
 
   attr :prompt, :string, default: nil, doc: "the first, empty option of a select"
+  attr :emoji, :boolean, default: false, doc: "emoji picker and autocomplete (text, textarea)"
 
   attr :rest, :global,
     include:
@@ -198,35 +203,75 @@ defmodule SalamendarWeb.CoreComponents do
 
   def input(%{type: "textarea"} = assigns) do
     ~H"""
-    <div class="field">
+    <div class={["field", @emoji && "field-emoji"]} {emoji_hook(@emoji, @id)}>
       <label :if={@label} for={@id} class="field-label">{@label}</label>
-      <textarea
-        id={@id}
-        name={@name}
-        class={["field-input", @errors != [] && "field-input-error"]}
-        {@rest}
-      >{Form.normalize_value("textarea", @value)}</textarea>
+      <.emoji_control emoji={@emoji} id={@id}>
+        <textarea
+          id={@id}
+          name={@name}
+          class={["field-input", @errors != [] && "field-input-error"]}
+          {@rest}
+        >{Form.normalize_value("textarea", @value)}</textarea>
+      </.emoji_control>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
 
   def input(assigns) do
+    assigns = assign(assigns, :emoji, assigns.emoji and assigns.type == "text")
+
     ~H"""
-    <div class="field">
+    <div class={["field", @emoji && "field-emoji"]} {emoji_hook(@emoji, @id)}>
       <label :if={@label} for={@id} class="field-label">{@label}</label>
-      <input
-        type={@type}
-        name={@name}
-        id={@id}
-        value={Form.normalize_value(@type, @value)}
-        class={["field-input", @errors != [] && "field-input-error"]}
-        {@rest}
-      />
+      <.emoji_control emoji={@emoji} id={@id}>
+        <input
+          type={@type}
+          name={@name}
+          id={@id}
+          value={Form.normalize_value(@type, @value)}
+          class={["field-input", @errors != [] && "field-input-error"]}
+          {@rest}
+        />
+      </.emoji_control>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
+
+  defp emoji_hook(true, id), do: [id: "#{id}-emoji", "phx-hook": "EmojiInput"]
+  defp emoji_hook(false, _id), do: []
+
+  attr :emoji, :boolean, required: true
+  attr :id, :any, required: true
+  slot :inner_block, required: true
+
+  # The input, the picker button over its right edge, and a popup the
+  # `EmojiInput` hook draws into. The button and popup are inside
+  # `phx-update="ignore"`, so re-renders (such as `phx-change` validation)
+  # don't reset an open popup or the button's `aria-expanded`.
+  defp emoji_control(%{emoji: true} = assigns) do
+    ~H"""
+    <div class="field-emoji-control">
+      {render_slot(@inner_block)}
+      <div id={"#{@id}-emoji-ui"} phx-update="ignore">
+        <button
+          type="button"
+          class="field-emoji-button"
+          aria-label="Insert emoji"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls={"#{@id}-emoji-popup"}
+        >
+          🙂
+        </button>
+        <div id={"#{@id}-emoji-popup"} class="emoji-popup" hidden></div>
+      </div>
+    </div>
+    """
+  end
+
+  defp emoji_control(assigns), do: ~H"{render_slot(@inner_block)}"
 
   defp error(assigns) do
     ~H"""

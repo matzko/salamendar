@@ -37,6 +37,41 @@ defmodule SalamendarWeb.CoreComponentsTest do
       refute render_input(field: event_form(%{}, error)[:title]) =~ "blank"
     end
 
+    test "emoji adds the hook, the button and an ignored popup to a text input" do
+      html = render_input(field: event_form(%{"title" => "Standup"})[:title], emoji: true)
+
+      assert html =~ ~s(class="field field-emoji" id="event_title-emoji" phx-hook="EmojiInput")
+      assert html =~ ~s(<div id="event_title-emoji-ui" phx-update="ignore">)
+      assert html =~ ~s(aria-label="Insert emoji")
+      assert html =~ ~s(aria-controls="event_title-emoji-popup")
+      assert html =~ ~s(<div id="event_title-emoji-popup" class="emoji-popup" hidden)
+      assert html =~ ~s(name="event[title]")
+    end
+
+    test "emoji works on a textarea" do
+      html =
+        render_input(
+          field: event_form(%{"description" => "Notes"})[:description],
+          type: "textarea",
+          emoji: true
+        )
+
+      assert html =~ ~s(phx-hook="EmojiInput")
+      assert html =~ ~s(Notes</textarea>)
+    end
+
+    test "inputs without emoji, or of other types, get none of it" do
+      f = event_form(%{"title" => "Standup", "day" => "2026-10-14"})
+
+      for html <- [
+            render_input(field: f[:title]),
+            render_input(field: f[:day], type: "date", emoji: true)
+          ] do
+        refute html =~ "phx-hook"
+        refute html =~ "emoji"
+      end
+    end
+
     test "fills in error placeholders" do
       error = [title: {"should be at most %{count} character(s)", [count: 255]}]
       assert render_input(field: event_form(%{"title" => "x"}, error)[:title]) =~ "at most 255"

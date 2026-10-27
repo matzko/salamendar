@@ -249,7 +249,7 @@ defmodule SalamendarWeb.SettingsLive do
         <li :for={label <- @labels} id={"label-#{label.id}"} class="label-row">
           <%= if @editing == label.id do %>
             <.form for={@edit_form} phx-submit="update" class="label-form">
-              <.input field={@edit_form[:name]} label="Name" maxlength="50" />
+              <.input field={@edit_form[:name]} label="Name" maxlength="50" emoji />
               <.color_picker
                 name={@edit_form[:color].name}
                 value={@edit_form[:color].value}
@@ -288,7 +288,7 @@ defmodule SalamendarWeb.SettingsLive do
 
       <.form for={@new_form} phx-submit="create" class="label-form label-new">
         <input type="hidden" name="scope" value={@scope} />
-        <.input field={@new_form[:name]} label="New label" maxlength="50" />
+        <.input field={@new_form[:name]} label="New label" maxlength="50" emoji />
         <.color_picker
           name={@new_form[:color].name}
           value={@new_form[:color].value}
