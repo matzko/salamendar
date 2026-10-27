@@ -4,7 +4,7 @@
 #
 #   kubectl create namespace external-dns
 #   kubectl -n external-dns create secret generic external-dns \
-#     --from-literal=tsig-secret=<secret from externaldns.key>
+#     --from-file=tsig-secret=<(awk -F'"' '/secret/ {printf "%s", $2}' externaldns.key)
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -77,6 +77,10 @@ spec:
             # Deletes records it owns that the cluster no longer wants, so
             # a replaced node's old IP goes away.
             - --policy=sync
+            # The node has a public IPv6 address, but the cluster is
+            # IPv4-only, so Traefik's hostPorts don't answer on it. Without
+            # this it publishes an AAAA record that IPv6 clients can't reach.
+            - --exclude-target-net=::/0
             - --registry=txt
             - --txt-owner-id=salamendar-lke
             - --provider=rfc2136
