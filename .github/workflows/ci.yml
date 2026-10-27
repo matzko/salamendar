@@ -1,5 +1,6 @@
 # Tests, lint and a Docker build on every PR and every push to main.
 # Branch protection on main requires these jobs, so a merge means tested.
+# A push to main then deploys (the deploy job).
 name: CI
 
 on:
@@ -100,15 +101,65 @@ jobs:
           cluster/traefik-dns.yaml cluster/external-dns.yaml
           cluster/deployer-rbac.yaml
 
-  # Catches a broken Dockerfile on the PR rather than at deploy time.
+  # Catches a broken Dockerfile on the PR rather than at deploy time. On
+  # main, also pushes the image the deploy job runs, tagged with the SHA.
   docker:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
+      - if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v7
         with:
           context: .
-          push: false
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/matzko/salamendar:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Deploys main once everything above passes. Not a required check: it
+  # never runs on PRs. If the rollout fails, the old pod keeps serving
+  # (maxUnavailable: 0).
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, lint, manifests, docker]
+    runs-on: ubuntu-24.04
+    # Holds the KUBECONFIG secret, and only main may deploy to it.
+    environment: production
+    # Two quick merges deploy in order; neither is cancelled.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      # The secret holds the kubeconfig itself; kubectl wants a path.
+      - run: |
+          umask 077
+          printf '%s\n' "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+      # An empty host would give the Ingress no host at all.
+      - run: |
+          test -n "$PHX_HOST"
+          echo "PHX_HOST=$PHX_HOST" > k8s/config.env
+        env:
+          PHX_HOST: ${{ vars.PHX_HOST }}
+      - working-directory: k8s
+        run: kustomize edit set image salamendar=ghcr.io/matzko/salamendar:${{ github.sha }}
+      - run: kubectl apply -k k8s
+      - run: kubectl -n salamendar rollout status deploy/salamendar --timeout=5m
+      # The deployer Role can read pods, their logs and events for this.
+      - if: failure()
+        run: |
+          kubectl -n salamendar get pods -o wide
+          kubectl -n salamendar describe pods -l app=salamendar
+          kubectl -n salamendar logs -l app=salamendar -c migrate --tail=100 || true
