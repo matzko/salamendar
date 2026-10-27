@@ -210,6 +210,7 @@ defmodule SalamendarWeb.CoreComponents do
           id={@id}
           name={@name}
           class={["field-input", @errors != [] && "field-input-error"]}
+          {emoji_combobox(@emoji, @id)}
           {@rest}
         >{Form.normalize_value("textarea", @value)}</textarea>
       </.emoji_control>
@@ -231,6 +232,7 @@ defmodule SalamendarWeb.CoreComponents do
           id={@id}
           value={Form.normalize_value(@type, @value)}
           class={["field-input", @errors != [] && "field-input-error"]}
+          {emoji_combobox(@emoji, @id)}
           {@rest}
         />
       </.emoji_control>
@@ -242,14 +244,29 @@ defmodule SalamendarWeb.CoreComponents do
   defp emoji_hook(true, id), do: [id: "#{id}-emoji", "phx-hook": "EmojiInput"]
   defp emoji_hook(false, _id), do: []
 
+  # The input is a combobox for `:name` autocomplete. The hook sets
+  # `aria-expanded` and `aria-activedescendant`, which re-renders would
+  # otherwise reset.
+  defp emoji_combobox(true, id) do
+    [
+      role: "combobox",
+      "aria-autocomplete": "list",
+      "aria-expanded": "false",
+      "aria-controls": "#{id}-emoji-suggest",
+      "phx-mounted": JS.ignore_attributes(["aria-expanded", "aria-activedescendant"])
+    ]
+  end
+
+  defp emoji_combobox(false, _id), do: []
+
   attr :emoji, :boolean, required: true
   attr :id, :any, required: true
   slot :inner_block, required: true
 
-  # The input, the picker button over its right edge, and a popup the
-  # `EmojiInput` hook draws into. The button and popup are inside
-  # `phx-update="ignore"`, so re-renders (such as `phx-change` validation)
-  # don't reset an open popup or the button's `aria-expanded`.
+  # The input, the picker button over its right edge, a popup the
+  # `EmojiInput` hook draws into, and the autocomplete list. All but the
+  # input are inside `phx-update="ignore"`, so re-renders (such as
+  # `phx-change` validation) don't reset them while open.
   defp emoji_control(%{emoji: true} = assigns) do
     ~H"""
     <div class="field-emoji-control">
@@ -266,6 +283,7 @@ defmodule SalamendarWeb.CoreComponents do
           🙂
         </button>
         <div id={"#{@id}-emoji-popup"} class="emoji-popup" hidden></div>
+        <ul id={"#{@id}-emoji-suggest"} class="emoji-suggest" role="listbox" hidden></ul>
       </div>
     </div>
     """

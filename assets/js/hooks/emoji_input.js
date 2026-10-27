@@ -13,6 +13,12 @@ const DATA_URL = "/vendor/emoji.json"
 const RECENT_KEY = "salamendar.emoji.recent"
 const RECENT_MAX = 24
 const SEARCH_MAX = 200
+const SUGGEST_MAX = 8
+
+// `:term` right before the caret, at the start of a word (so not `10:30`
+// or `https://`), and `:name:` just closed.
+const TERM = /(?:^|[\s([{"'])(:([a-z0-9_+-]{2,}))$/i
+const CLOSED = /(?:^|[\s([{"'])(:([a-z0-9_+-]+):)$/i
 
 let loading = null
 
@@ -51,24 +57,71 @@ export const insert = (input, text, start = input.selectionStart, end = input.se
   return true
 }
 
-// Emoji matching `term`, best first: names starting with it, then names
-// with a word starting with it (`cake` finds `birthday_cake`), then names
-// containing it. Within each group, Slack's order.
-export const search = (data, term) => {
+// How well `name` matches `term`: 0 if it starts with it, 1 if a word in
+// it does (`cake` in `birthday_cake`), 2 if it contains it, else 3.
+const matchRank = (name, term) => {
+  const at = name.indexOf(term)
+  if (at === 0) return 0
+  if (at > 0 && /[_-]/.test(name[at - 1])) return 1
+  return at > 0 ? 2 : 3
+}
+
+// The name of `emoji` that best matches `term`.
+export const matchedName = (emoji, term) =>
+  emoji.names.reduce((best, name) => (matchRank(name, term) < matchRank(best, term) ? name : best))
+
+// Emoji matching `term`, best match first. Within each rank, the chars in
+// `first` (such as the frequently used ones) lead, then Slack's order.
+export const search = (data, term, first = []) => {
   const groups = [[], [], []]
 
   for (const emoji of data.all) {
-    let best = 3
-    for (const name of emoji.names) {
-      const at = name.indexOf(term)
-      if (at === 0) best = 0
-      else if (at > 0 && /[_-]/.test(name[at - 1])) best = Math.min(best, 1)
-      else if (at > 0) best = Math.min(best, 2)
-    }
-    if (best < 3) groups[best].push(emoji)
+    const rank = Math.min(...emoji.names.map((name) => matchRank(name, term)))
+    if (rank < 3) groups[rank].push(emoji)
   }
 
-  return groups.flat()
+  const order = (emoji) => {
+    const at = first.indexOf(emoji.char)
+    return at < 0 ? Infinity : at
+  }
+  return groups.flatMap((group) => group.sort((a, b) => order(a) - order(b)))
+}
+
+// Where `position` in `textarea` is drawn, relative to the textarea's
+// border box: a hidden copy with the same styles, measured up to there.
+const MIRRORED = [
+  "boxSizing", "width", "borderTopWidth", "borderRightWidth", "borderBottomWidth",
+  "borderLeftWidth", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+  "fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing",
+  "wordSpacing", "tabSize", "textIndent", "textTransform",
+]
+
+const caretCoordinates = (textarea, position) => {
+  const style = getComputedStyle(textarea)
+  const mirror = document.createElement("div")
+  for (const property of MIRRORED) mirror.style[property] = style[property]
+  Object.assign(mirror.style, {
+    position: "absolute",
+    visibility: "hidden",
+    top: "0",
+    left: "-9999px",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+  })
+
+  mirror.textContent = textarea.value.slice(0, position)
+  const marker = document.createElement("span")
+  marker.textContent = "\u200b"
+  mirror.append(marker)
+  document.body.append(mirror)
+
+  const lineHeight = marker.offsetHeight
+  const coordinates = {
+    top: marker.offsetTop - textarea.scrollTop + lineHeight,
+    left: marker.offsetLeft - textarea.scrollLeft,
+  }
+  mirror.remove()
+  return coordinates
 }
 
 // The last picks, newest first, as chars. Storage can be missing or throw
@@ -196,7 +249,7 @@ class Picker {
     const searching = term !== ""
 
     if (searching) {
-      const matches = search(this.data, term).slice(0, SEARCH_MAX)
+      const matches = search(this.data, term, recentEmoji()).slice(0, SEARCH_MAX)
       this.results.replaceChildren(
         element("div", {className: "emoji-options"}, matches.map(emojiButton)),
       )
@@ -316,7 +369,9 @@ export const EmojiInput = {
     this.input = this.el.querySelector("input, textarea")
     this.button = this.el.querySelector(".field-emoji-button")
     this.popup = this.el.querySelector(".emoji-popup")
+    this.list = this.el.querySelector(".emoji-suggest")
     this.picker = null
+    this.suggestions = []
 
     // Start loading early, so the data is there by the first click or `:`.
     this.load = () => loadEmoji().catch(() => {})
@@ -349,6 +404,20 @@ export const EmojiInput = {
       }
     }
     this.popup.addEventListener("focusout", this.focusOut)
+
+    // `:name` autocomplete. Not while an IME is composing: its text isn't
+    // final until `compositionend`.
+    this.input.addEventListener("input", (event) => event.isComposing || this.autocomplete())
+    this.input.addEventListener("compositionend", () => this.autocomplete())
+    this.input.addEventListener("click", () => this.autocomplete())
+    this.input.addEventListener("keydown", (event) => this.suggestKeydown(event))
+    this.input.addEventListener("blur", () => this.closeSuggest())
+    // Rows take clicks without taking focus from the input.
+    this.list.addEventListener("pointerdown", (event) => event.preventDefault())
+    this.list.addEventListener("click", (event) => {
+      const row = event.target.closest("[role=option]")
+      if (row) this.choose(Number(row.dataset.index))
+    })
   },
 
   destroyed() {
@@ -356,6 +425,7 @@ export const EmojiInput = {
   },
 
   async open() {
+    this.closeSuggest()
     let data
     try {
       data = await loadEmoji()
@@ -387,6 +457,141 @@ export const EmojiInput = {
       this.input.focus()
       this.input.setSelectionRange(...this.range)
     }
+  },
+
+  // Looks at the text before the caret: a closed `:name:` we know becomes
+  // its emoji, and an open `:term` shows the list.
+  async autocomplete() {
+    const data = await loadEmoji().catch(() => null)
+    const {input} = this
+    const caret = input.selectionStart
+    if (!data || document.activeElement !== input || caret !== input.selectionEnd) {
+      return this.closeSuggest()
+    }
+
+    const before = input.value.slice(0, caret)
+    const closed = before.match(CLOSED)
+    const named = closed && data.byName.get(closed[2].toLowerCase())
+    if (named) {
+      this.closeSuggest()
+      this.replace(caret - closed[1].length, caret, named)
+      return
+    }
+
+    const open = before.match(TERM)
+    const term = open?.[2].toLowerCase()
+    const matches = open ? search(data, term, recentEmoji()).slice(0, SUGGEST_MAX) : []
+    if (matches.length === 0) return this.closeSuggest()
+
+    this.suggestStart = caret - open[1].length
+    this.suggestions = matches
+    this.drawSuggestions(term)
+    this.select(0)
+  },
+
+  drawSuggestions(term) {
+    const rows = this.suggestions.map((emoji, index) => {
+      const name = matchedName(emoji, term)
+      const at = name.indexOf(term)
+      const label = element("span", {className: "emoji-suggestion-name"}, [
+        `:${name.slice(0, at)}`,
+        element("strong", {textContent: term}),
+        `${name.slice(at + term.length)}:`,
+      ])
+      return element(
+        "li",
+        {id: `${this.list.id}-${index}`, role: "option", className: "emoji-suggestion"},
+        [element("span", {className: "emoji-suggestion-char", textContent: emoji.char}), label],
+      )
+    })
+    rows.forEach((row, index) => (row.dataset.index = index))
+    const opening = this.list.hidden
+    this.list.replaceChildren(...rows)
+    this.list.hidden = false
+    this.input.ariaExpanded = "true"
+    this.placeSuggestions()
+    // Only when it opens, so the page doesn't jump while typing.
+    if (opening) this.list.scrollIntoView({block: "nearest"})
+  },
+
+  // Under the line being typed on: the input's bottom, or in a textarea,
+  // under the `:` (kept inside the field).
+  placeSuggestions() {
+    const {input, list} = this
+    let top = input.offsetTop + input.offsetHeight
+    let left = input.offsetLeft
+
+    if (input.tagName === "TEXTAREA") {
+      const caret = caretCoordinates(input, this.suggestStart)
+      top = input.offsetTop + Math.min(caret.top, input.clientHeight)
+      left = input.offsetLeft + caret.left
+    }
+
+    const maxLeft = input.offsetLeft + input.offsetWidth - list.offsetWidth
+    list.style.top = `${top + 2}px`
+    list.style.left = `${Math.max(input.offsetLeft, Math.min(left, maxLeft))}px`
+  },
+
+  select(index) {
+    const count = this.suggestions.length
+    this.active = (index + count) % count
+    for (const row of this.list.children) {
+      row.ariaSelected = String(Number(row.dataset.index) === this.active)
+    }
+    const row = this.list.children[this.active]
+    this.input.setAttribute("aria-activedescendant", row.id)
+    row.scrollIntoView({block: "nearest"})
+  },
+
+  choose(index) {
+    const emoji = this.suggestions[index]
+    const end = this.input.selectionStart
+    this.closeSuggest()
+    this.replace(this.suggestStart, end, emoji)
+  },
+
+  closeSuggest() {
+    if (this.list.hidden) return
+    this.list.hidden = true
+    this.suggestions = []
+    this.input.ariaExpanded = "false"
+    this.input.removeAttribute("aria-activedescendant")
+  },
+
+  // While the list is open: Up/Down move, Enter or Tab picks, Escape closes.
+  // Those keys go no further: Enter doesn't submit the form, and Escape
+  // doesn't close the event panel (`phx-window-keydown`).
+  suggestKeydown(event) {
+    if (this.list.hidden || event.isComposing) return
+
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowUp":
+        this.select(this.active + (event.key === "ArrowDown" ? 1 : -1))
+        break
+      case "Enter":
+      case "Tab":
+        this.choose(this.active)
+        break
+      case "Escape":
+        this.closeSuggest()
+        break
+      case "ArrowLeft":
+      case "ArrowRight":
+      case "Home":
+      case "End":
+        this.closeSuggest()
+        return
+      default:
+        return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+  },
+
+  replace(start, end, emoji) {
+    if (insert(this.input, emoji.char, start, end)) rememberEmoji(emoji.char)
   },
 
   pick(emoji, keepOpen) {
